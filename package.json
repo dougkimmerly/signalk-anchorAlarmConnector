@@ -1,0 +1,19 @@
+{
+  "name": "signalk-anchoralarmconnector",
+  "version": "1.0.0",
+  "description": "connection between an anchor windlass controller and an anchor alarm",
+  "main": "plugin/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/dougkimmerly/signalk-anchorAlarmConnector.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dougkimmerly/signalk-anchorAlarmConnector/issues"
+  },
+  "homepage": "https://github.com/dougkimmerly/signalk-anchorAlarmConnector#readme"
+}

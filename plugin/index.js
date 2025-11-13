@@ -25,6 +25,16 @@ let depth = 0
 let rodeLength = 0
 let bowHeight = 0
 let unsubscribes = []
+let anchorSet = false
+let lastChainMove = 0
+let lastPosition = 0
+let lastDepth = 0
+let lastCounterConnection = 0
+let activeUpdates = 1000
+let anchorDepth = 0
+
+// testing
+let moveEast = true
 
 module.exports = (app) => {
     const plugin = {
@@ -43,7 +53,7 @@ module.exports = (app) => {
             console.log('Token obtained:', token)
 
             // Uncomment line below to run test sequence
-            // runTestSequence()
+            runTestSequence()
 
             /*delaying 3 seconds so the needed paths 
             can be established at startup*/
@@ -62,6 +72,7 @@ module.exports = (app) => {
 
                 console.log(rodeDeployed, anchorDropped, depth, rodeLength)
             }, 3000)
+            sendChange('navigation.anchor.autoReady', false)
 
             app.subscriptionmanager.subscribe(
                 {
@@ -71,11 +82,23 @@ module.exports = (app) => {
                             path: 'navigation.anchor.rodeDeployed',
                             period: 1000,
                         },
-                        { path: 'navigation.anchor.position', period: 1000 },
-                        { path: 'navigation.anchor.rodeLength', period: 1000 },
+                        {
+                            path: 'navigation.anchor.position',
+                            period: activeUpdates,
+                        },
+                        {
+                            path: 'navigation.anchor.rodeLength',
+                            period: activeUpdates,
+                        },
                         {
                             path: 'environment.depth.belowSurface',
-                            period: 1000,
+                            period: activeUpdates,
+                        },
+                        { path: 'navigation.position', period: 15000 },
+                        { path: 'navigation.anchor.command', period: 15000 },
+                        {
+                            path: 'navigation.anchor.distanceFromBow',
+                            period: activeUpdates,
                         },
                     ],
                 },
@@ -85,9 +108,12 @@ module.exports = (app) => {
                 },
                 (delta) => {
                     delta.updates.forEach((update) => {
-                        update.values.forEach((v) => {
+                        update.values?.forEach((v) => {
                             const path = v.path
                             const value = v.value
+                            const updateTime = new Date(
+                                update.timestamp
+                            ).getTime()
                             if (path === 'navigation.anchor.rodeDeployed') {
                                 let previousRode = rodeDeployed
                                 let newRode = value
@@ -107,6 +133,9 @@ module.exports = (app) => {
                                     !anchorDropped
                                 ) {
                                     sendAnchorCommand('dropAnchor')
+                                    lastChainMove = Date.now()
+                                    anchorDepth = depth
+                                    anchorSet = false
                                 }
                                 if (
                                     newRode < previousRode &&
@@ -114,25 +143,65 @@ module.exports = (app) => {
                                     newRode < depth + bowHeight
                                 ) {
                                     sendAnchorCommand('raiseAnchor')
+                                    anchorSet = false
+                                    lastChainMove = Date.now()
+                                    anchorSet = false
                                 }
-                                if (newRode != rodeLength && anchorDropped) {
-                                    sendAnchorCommand('setRodeLength', {
-                                        length: newRode,
-                                    })
+                                if (newRode != rodeDeployed && anchorDropped) {
+                                    lastChainMove = Date.now()
+                                    anchorSet = false
                                 }
                                 rodeDeployed = newRode
                             } else if (path === 'navigation.anchor.position') {
-                                app.debug('Anchor position changed:', value)
+                                // app.debug('Anchor position changed:', value)
                                 anchorDropped = value != null
                             } else if (
                                 path === 'navigation.anchor.rodeLength'
                             ) {
-                                app.debug('Rode length changed:', value)
+                                // app.debug('Rode length changed:', value)
                                 rodeLength = value
                             } else if (
                                 path === 'environment.depth.belowSurface'
                             ) {
                                 depth = value
+                                lastDepth = updateTime
+                            } else if (path === 'navigation.position') {
+                                lastPosition = updateTime
+                            } else if (path === 'navigation.anchor.command') {
+                                lastCounterConnection = updateTime
+                            }
+
+                            // autoset radius after 20 minutes of no chain movement 1200000 ms
+                            // for testing set to 1 minute 60000 ms
+
+                            if (
+                                Date.now() - lastChainMove > 60000 &&
+                                !anchorSet
+                            ) {
+                                // sendAnchorCommand('setRadius')
+                                sendAnchorCommand('setRodeLength', {
+                                    length: rodeDeployed,
+                                })
+                                activeUpdates = 20000
+                                anchorSet = true
+                                anchorDepth = Math.abs(
+                                    app.getSelfPath(
+                                        'navigation.anchor.position'
+                                    ).value.altitude
+                                )
+
+                                let scope = rodeDeployed / (anchorDepth + 2)
+                                sendChange('navigation.anchor.scope', scope)
+                            } else {
+                                activeUpdates = 1000
+                            }
+
+                            if (
+                                lastPosition > Date.now() - 120000 &&
+                                lastDepth > Date.now() - 120000 &&
+                                lastCounterConnection > Date.now() - 120000
+                            ) {
+                                sendChange('navigation.anchor.autoReady', true)
                             }
                         })
                     })
@@ -224,10 +293,93 @@ module.exports = (app) => {
         console.log('Starting test sequence...')
         sendChange('environment.depth.belowSurface', 5)
         sendChange('navigation.position', {
-            longitude: -79.38,
-            latitude: 43.65,
+            longitude: -79.5073,
+            latitude: 43.59738,
         })
-        console.log(rodeDeployed, anchorDropped, depth, rodeLength)
+
+        console.log(
+            'tests running',
+            rodeDeployed,
+            anchorDropped,
+            depth,
+            rodeLength
+        )
+        // east west is +- longitude approx 0.0000624 per 5 meters
+        // north south is +- latitude approx 0.0000090 per 1 meter
+
+        setTimeout(() => {
+            let position = app.getSelfPath('navigation.position').value
+            if (moveEast) {
+                position.longitude += 0.0000624
+            } else {
+                position.longitude -= 0.0000624
+            }
+            moveEast = !moveEast
+            app.debug('Moving east to:', position)
+            sendChange('navigation.position', position)
+            // repeat every 5 seconds
+            setInterval(() => {
+                let position = app.getSelfPath('navigation.position').value
+                if (moveEast) {
+                    position.longitude += 0.0000624
+                } else {
+                    position.longitude -= 0.0000624
+                }
+                moveEast = !moveEast
+                app.debug('Moving east to:', position)
+                sendChange('navigation.position', position)
+                if (!anchorSet) {
+                    app.debug(
+                        'Anchor complete ' +
+                            anchorSet +
+                            ' lastChainMove ' +
+                            lastChainMove +
+                            ' Date.now ' +
+                            Date.now() +
+                            ' diff ' +
+                            (Date.now() - lastChainMove)
+                    )
+                }
+                sendChange('environment.depth.belowSurface', 5)
+            }, 5000)
+        }, 15000)
+
+        setTimeout(() => {
+            let position = app.getSelfPath('navigation.position').value
+            let depth = app.getSelfPath('environment.depth.belowSurface').value
+            let rodeDeployed = app.getSelfPath(
+                'navigation.anchor.rodeDeployed'
+            )?.value
+            let distance = app.getSelfPath(
+                'navigation.anchor.distanceFromBow'
+            )?.value
+            let movetodo = rodeDeployed * 0.9 - distance
+            if (movetodo > 1) {
+                position.latitude -= 0.000009
+                sendChange('navigation.position', position)
+                console.log('moved south')
+            }
+            // repeat every 2 seconds
+            setInterval(() => {
+                let position = app.getSelfPath('navigation.position').value
+                let depth = app.getSelfPath(
+                    'environment.depth.belowSurface'
+                ).value
+                let rodeDeployed = app.getSelfPath(
+                    'navigation.anchor.rodeDeployed'
+                ).value
+                let distance = app.getSelfPath(
+                    'navigation.anchor.distanceFromBow'
+                )?.value
+                let movetodo = rodeDeployed * 0.9 - distance
+                if (movetodo > 1) {
+                    position.latitude -= 0.000009
+                    sendChange('navigation.position', position)
+                    console.log('moved south again')
+                }
+            }, 2000)
+        }, 22000)
+
         //uncomment below to run test sequence that drops and raises anchor
         // wait 35 seconds then drop anchor
         // setTimeout(() => {

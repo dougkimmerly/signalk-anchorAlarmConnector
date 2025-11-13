@@ -7,6 +7,7 @@ logs/
 
 # Local configs
 config.json
+token.json
 
 # Environment variables
 .env

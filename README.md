@@ -33,6 +33,47 @@ This Signalk plugin seamlessly integrates a chain counter with the anchor alarm 
 - Automates alarm activation/deactivation during chain lowering/raising
 - Keeps chain payout data synchronized
 - Provides reliable anchor status detection
+- **Auto-clear alarms** when boat returns to safe zone for sustained period (prevents false alarms from transient bad data)
+
+---
+
+## Auto-Clear Alarm Feature
+
+The plugin includes intelligent alarm auto-clearing to prevent false alarms from temporary bad GPS data or brief position spikes.
+
+### How It Works
+
+1. **Alarm triggered**: When boat drifts into warning or emergency zone
+2. **Monitoring starts**: Plugin begins checking boat position every 5 seconds
+3. **Safe zone tracking**: Counts consecutive time boat remains in safe zone
+4. **Auto-clear**: After sustained time in safe zone (default 30 seconds), alarm automatically clears to 'normal'
+5. **Counter reset**: If boat leaves safe zone, counter resets to zero
+
+### Configuration
+
+**Auto-Clear Alarms** (default: `enabled`)
+- Automatically clear anchor alarms when boat returns to safe zone
+- Prevents false alarms from transient bad data
+- Set to `false` to disable and require manual alarm clearing
+
+**Auto-Clear Sustained Time** (default: `30 seconds`)
+- How long boat must remain in safe zone before alarm auto-clears
+- Increase for more conservative clearing (e.g., 60 seconds)
+- Decrease for faster clearing (e.g., 15 seconds)
+
+### Configuration in Signal K
+
+1. Navigate to **Server → Plugin Config → Anchor Alarm Connector**
+2. Toggle **"Auto-Clear Alarms"** on/off
+3. Adjust **"Auto-Clear Sustained Time (seconds)"** as needed
+4. Click **Submit** and restart the plugin
+
+### Technical Details
+
+- **Event-driven**: Only monitors when alarm is active (zero overhead when no alarm)
+- **Check interval**: 5 seconds
+- **Safe zone definition**: Uses `navigation.anchor.meta.zones` normal zone upper boundary
+- **Position data**: Reads `navigation.anchor.distanceFromBow` for accuracy
 
 ---
 
@@ -54,11 +95,14 @@ This Signalk plugin seamlessly integrates a chain counter with the anchor alarm 
    - `navigation.anchor.rodeLength`
    - `environment.depth.belowSurface`
    - `design.bowAnchorHeight`
-3. **Configure parameters** as needed:
-   - Adjust chain height (`design.bowAnchorHeight`)
-   - Set water depth if applicable
-4. **Engage in normal operation:**  
-   The plugin will **automatically** activate/deactivate alarms based on chain movement.
+3. **Configure parameters** in Signal K Plugin Config:
+   - **Server Base URL**: SignalK server address (default: `http://localhost:80`)
+   - **Client ID**: Unique identifier (default: `signalk-anchor-alarm-connector`)
+   - **Auto-Clear Alarms**: Enable/disable auto-clear feature (default: `enabled`)
+   - **Auto-Clear Sustained Time**: Time in seconds (default: `30`)
+   - **Test Mode**: Enable test simulation (default: `disabled` - see [TEST_README.md](plugin/TEST_README.md))
+4. **Engage in normal operation:**
+   The plugin will **automatically** activate/deactivate alarms based on chain movement and clear alarms when boat returns to safe zone.
 
 ---
 

@@ -17,6 +17,9 @@ let smoothedRode = 0 // Smoothed rode value to prevent explosions from sudden ch
 let manualMoveGracePeriod = 0 // Iterations remaining in grace period after manual move
 let virtualAnchorLat = null // Virtual anchor position for physics (not in SignalK)
 let virtualAnchorLon = null // Virtual anchor position for physics (not in SignalK)
+let previousRodeDeployed = 0 // Track previous rode for chain-raising detection
+let gradualMoveDistance = 0 // Remaining distance (m) to move toward anchor gradually
+let gradualMoveIterations = 10 // Spread movement over this many iterations for smooth motion
 
 /**
  * Runs a realistic wind-based anchor test simulation
@@ -144,6 +147,41 @@ function runTestSequence(app, sendChange) {
         if (Math.random() < 0.05) {
             console.log(`Rode values: raw=${rawRodeDeployed}m, smoothed=${currentRodeDeployed}m`)
         }
+
+        // Monitor chain direction for auto-retrieve boat movement
+        const chainDirection = app.getSelfPath('navigation.anchor.chainDirection')?.value
+
+        // Detect chain being raised and set up gradual boat movement toward anchor
+        if (chainDirection === 'up' && previousRodeDeployed > 0) {
+            const chainRaised = previousRodeDeployed - currentRodeDeployed
+
+            if (chainRaised > 0.1) { // Significant raise (>10cm)
+                // Calculate horizontal distance freed using Pythagorean theorem
+                let horizontalFreed = 0
+                if (chainRaised > currentDepth) {
+                    horizontalFreed = Math.sqrt(
+                        Math.pow(chainRaised, 2) - Math.pow(currentDepth, 2)
+                    )
+                } else {
+                    // If chain raised is less than depth, most of it is vertical
+                    horizontalFreed = chainRaised * 0.2 // Estimate 20% horizontal component
+                }
+
+                // Add slack creation distance for next retrieval cycle
+                const slackCreationDistance = 2.5 // meters
+                const totalMoveDistance = horizontalFreed + slackCreationDistance
+
+                // Set up gradual movement (will be applied over multiple iterations)
+                gradualMoveDistance = totalMoveDistance
+
+                console.log(`Chain raised ${chainRaised.toFixed(2)}m, ` +
+                           `freed ${horizontalFreed.toFixed(2)}m horizontal, ` +
+                           `will move ${totalMoveDistance.toFixed(2)}m toward anchor gradually over ${gradualMoveIterations} iterations`)
+            }
+        }
+
+        // Update previous rode for next iteration
+        previousRodeDeployed = currentRodeDeployed
 
         const anchorPos = app.getSelfPath('navigation.anchor.position')?.value
         const distance =
@@ -297,8 +335,33 @@ function runTestSequence(app, sendChange) {
         boatVelocityY += accelY * DT
 
         // Update position
-        const deltaX = boatVelocityX * DT // meters
-        const deltaY = boatVelocityY * DT // meters
+        let deltaX = boatVelocityX * DT // meters
+        let deltaY = boatVelocityY * DT // meters
+
+        // Apply gradual movement toward anchor if chain is being raised
+        if (gradualMoveDistance > 0.01) {
+            // Move a fraction of the remaining distance each iteration
+            const moveThisIteration = gradualMoveDistance / gradualMoveIterations
+
+            // Calculate direction to anchor (for gradual movement, use real anchor not virtual)
+            const deltaLatToAnchor = anchorPos.latitude - currentLat
+            const deltaLonToAnchor = anchorPos.longitude - currentLon
+            const angleToRealAnchor = Math.atan2(deltaLonToAnchor, deltaLatToAnchor)
+
+            // Add gradual movement toward anchor
+            const gradualDeltaX = moveThisIteration * Math.sin(angleToRealAnchor)
+            const gradualDeltaY = moveThisIteration * Math.cos(angleToRealAnchor)
+
+            deltaX += gradualDeltaX
+            deltaY += gradualDeltaY
+
+            // Reduce remaining distance
+            gradualMoveDistance -= moveThisIteration
+
+            if (Math.random() < 0.2) { // Log occasionally
+                console.log(`Gradual move: ${moveThisIteration.toFixed(2)}m toward anchor, ${gradualMoveDistance.toFixed(2)}m remaining`)
+            }
+        }
 
         currentLon = currentLon + deltaX * METERS_TO_LON
         currentLat = currentLat + deltaY * METERS_TO_LAT

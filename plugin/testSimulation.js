@@ -62,7 +62,7 @@ function runTestSequence(app, sendChange, options = {}) {
     console.log(`============================================`)
 
     // Initial test conditions
-    const testDepth = 5 // meters
+    const testDepth = 3 // meters - reduced from 5m to allow proper catenary physics with initial chain deployment
     const initialLat = 43.59738
     const initialLon = -79.5073
 

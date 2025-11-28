@@ -282,6 +282,43 @@ module.exports = (app) => {
                 const result = testSimulation.startMotoringBackwards(app)
                 res.send(result)
             })
+
+            router.put('/setanchor', (req, res) => {
+                try {
+                    // Get current anchor depth from position altitude
+                    const anchorPosition = app.getSelfPath('navigation.anchor.position')
+                    const rodeDeployedValue = app.getSelfPath('navigation.anchor.rodeDeployed')
+
+                    if (!anchorPosition || !anchorPosition.value) {
+                        return res.status(400).send('Anchor position not set in SignalK')
+                    }
+
+                    if (!rodeDeployedValue || rodeDeployedValue.value === undefined) {
+                        return res.status(400).send('Rode deployed not available in SignalK')
+                    }
+
+                    const anchorDepth = Math.abs(anchorPosition.value.altitude)
+                    const rodeLength = rodeDeployedValue.value
+
+                    console.log(`Setting anchor: depth=${anchorDepth.toFixed(2)}m, rode=${rodeLength.toFixed(2)}m`)
+
+                    // Send setManualAnchor command to alarm connector
+                    sendAnchorCommand('setManualAnchor', {
+                        anchorDepth: anchorDepth,
+                        rodeLength: rodeLength,
+                    })
+
+                    // Also set rode length explicitly
+                    sendAnchorCommand('setRodeLength', {
+                        length: rodeLength,
+                    })
+
+                    res.send(`Anchor set: depth=${anchorDepth.toFixed(2)}m, rode=${rodeLength.toFixed(2)}m`)
+                } catch (error) {
+                    console.error('Error setting anchor:', error)
+                    res.status(500).send(`Error setting anchor: ${error.message}`)
+                }
+            })
         },
 
         stop: () => {

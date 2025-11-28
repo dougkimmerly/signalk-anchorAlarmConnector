@@ -264,6 +264,21 @@ module.exports = (app) => {
                 const result = testSimulation.moveToZone(app, 'alarm')
                 res.send(result)
             })
+
+            router.put('/motorforward', (req, res) => {
+                const result = testSimulation.startMotoring(app)
+                res.send(result)
+            })
+
+            router.put('/motorstop', (req, res) => {
+                const result = testSimulation.stopMotoring()
+                res.send(result)
+            })
+
+            router.put('/motorbackward', (req, res) => {
+                const result = testSimulation.startMotoringBackwards(app)
+                res.send(result)
+            })
         },
 
         stop: () => {

@@ -20,14 +20,31 @@ let virtualAnchorLon = null // Virtual anchor position for physics (not in Signa
 let previousRodeDeployed = 0 // Track previous rode for chain-raising detection
 let gradualMoveDistance = 0 // Remaining distance (m) to move toward anchor gradually
 let gradualMoveIterations = 10 // Spread movement over this many iterations for smooth motion
+let motoringActive = false // Track if motor is running forward
+let motoringBackwardsActive = false // Track if motor is running backwards
+let motoringApp = null // Store app reference for motoring
+
+// Data logging for testing framework
+let testDataLog = []
+let loggingEnabled = false
+let testStartTime = null
 
 /**
  * Runs a realistic wind-based anchor test simulation
  * @param {object} app - SignalK app object
  * @param {function} sendChange - Function to send SignalK updates
+ * @param {object} options - Optional configuration {enableLogging: boolean}
  */
-function runTestSequence(app, sendChange) {
+function runTestSequence(app, sendChange, options = {}) {
     console.log('Starting wind-based anchor test simulation...')
+
+    // Initialize logging
+    loggingEnabled = options.enableLogging || false
+    if (loggingEnabled) {
+        testDataLog = []
+        testStartTime = Date.now()
+        console.log('Data logging enabled')
+    }
 
     // Reset global velocity variables to ensure clean start
     boatVelocityX = 0
@@ -116,6 +133,37 @@ function runTestSequence(app, sendChange) {
         }
     }, 10000) // Update wind every 10 seconds
 
+    // Data logging function - called each iteration if logging enabled
+    function logTestData(state) {
+        if (!loggingEnabled) return
+
+        const elapsed = Date.now() - testStartTime
+        testDataLog.push({
+            timestamp: elapsed,
+            lat: state.lat,
+            lon: state.lon,
+            heading: state.heading,
+            velocityX: state.velocityX,
+            velocityY: state.velocityY,
+            distance: state.distance,
+            windSpeed: state.windSpeed,
+            windDirection: state.windDirection,
+            chainSlack: state.chainSlack,
+            rodeDeployed: state.rodeDeployed,
+            chainDirection: state.chainDirection,
+            motorActive: state.motorActive,
+            motorBackwardsActive: state.motorBackwardsActive,
+            windForce: state.windForce,
+            rodeTension: state.rodeTension
+        })
+    }
+
+    // Export function to retrieve logged data
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports.getTestData = () => testDataLog
+        module.exports.clearTestData = () => { testDataLog = [] }
+    }
+
     // Main physics simulation loop
     testInterval = setInterval(() => {
         // Debug: log values at start of iteration
@@ -178,6 +226,30 @@ function runTestSequence(app, sendChange) {
                            `freed ${horizontalFreed.toFixed(2)}m horizontal, ` +
                            `will move ${totalMoveDistance.toFixed(2)}m toward anchor gradually over ${gradualMoveIterations} iterations`)
             }
+        } else if (chainDirection === 'down' && previousRodeDeployed > 0) {
+            // Detect chain being lowered and set up gradual boat movement away from anchor
+            const chainLowered = currentRodeDeployed - previousRodeDeployed
+
+            if (chainLowered > 0.1) { // Significant lowering (>10cm)
+                // Calculate horizontal distance needed using Pythagorean theorem
+                // As chain deploys, boat drifts outward to accommodate the new length
+                let horizontalDrift = 0
+                if (chainLowered > currentDepth) {
+                    horizontalDrift = Math.sqrt(
+                        Math.pow(chainLowered, 2) - Math.pow(currentDepth, 2)
+                    )
+                } else {
+                    // If chain lowered is less than depth, most is vertical
+                    horizontalDrift = chainLowered * 0.2 // Estimate 20% horizontal component
+                }
+
+                // Set up gradual movement away from anchor (opposite of retrieval)
+                // Negative value indicates movement away from anchor
+                gradualMoveDistance = -horizontalDrift
+
+                console.log(`Chain lowered ${chainLowered.toFixed(2)}m, ` +
+                           `will drift ${horizontalDrift.toFixed(2)}m away from anchor gradually over ${gradualMoveIterations} iterations`)
+            }
         }
 
         // Update previous rode for next iteration
@@ -187,18 +259,34 @@ function runTestSequence(app, sendChange) {
         const distance =
             app.getSelfPath('navigation.anchor.distanceFromBow')?.value || 0
 
+        // During deployment (chainDirection === 'down'), initialize virtual anchor even if real anchor not yet valid
+        // This allows boat to drift as chain is being lowered
+        if (chainDirection === 'down' && (virtualAnchorLat === null || virtualAnchorLon === null)) {
+            virtualAnchorLat = currentLat
+            virtualAnchorLon = currentLon
+            console.log(`Virtual anchor initialized during deployment to boat position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+        }
+
         if (!anchorPos ||
             typeof anchorPos.latitude !== 'number' ||
             typeof anchorPos.longitude !== 'number') {
-            console.log('WARNING: anchor position not set yet, waiting...')
-            return // Wait until anchor is set with valid coordinates
+            // During chain deployment, continue physics with virtual anchor even without real anchor position
+            if (chainDirection !== 'down') {
+                console.log('WARNING: anchor position not set yet, waiting...')
+                return // Wait until anchor is set with valid coordinates (unless deploying)
+            }
+            // During deployment, use virtual anchor position instead
+            anchorPos = {
+                latitude: virtualAnchorLat || currentLat,
+                longitude: virtualAnchorLon || currentLon
+            }
         }
 
-        // Initialize virtual anchor to real anchor position on first valid anchor
-        if (virtualAnchorLat === null || virtualAnchorLon === null) {
-            virtualAnchorLat = anchorPos.latitude
-            virtualAnchorLon = anchorPos.longitude
-            console.log(`Virtual anchor initialized to real anchor position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+        // Initialize virtual anchor to boat's current position when anchor is first set (not deploying)
+        if (chainDirection !== 'down' && (virtualAnchorLat === null || virtualAnchorLon === null)) {
+            virtualAnchorLat = currentLat
+            virtualAnchorLon = currentLon
+            console.log(`Virtual anchor initialized to boat position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
         }
 
         console.log(`>>> After anchor check: anchor is valid, continuing with physics...`)
@@ -253,25 +341,47 @@ function runTestSequence(app, sendChange) {
 
             // Rode tension: spring force + velocity damping to prevent bounce
             // Based on real-world anchoring: rode acts as spring-damper system
+
+            // Calculate tension adjustment based on chain deployment/retrieval
+            // During retrieval: apply tension proportional to suspended chain weight
+            // During deployment: reduce tension to allow natural drift
+            let tensionMultiplier = 1.0  // Default multiplier
+
+            if (chainDirection === 'up') {
+                // During retrieval: increase tension based on suspended chain weight
+                // Suspended chain weight = chain in water (rode - vertical component)
+                const verticalRode = currentDepth + bowHeight
+                const suspendedChainLength = Math.max(0, currentRodeDeployed - verticalRode)
+                // Apply about 50% of suspended chain weight as proportional force
+                // Normalize by relating to typical wind force
+                const chainWeightForce = suspendedChainLength * 50  // ~50 N per meter of suspended chain
+                tensionMultiplier = 1.0 + (chainWeightForce / windForce) * 0.5  // 50% of normalized weight
+                tensionMultiplier = Math.min(tensionMultiplier, 2.0)  // Cap at 2x for stability
+            } else if (chainDirection === 'down') {
+                // During deployment: reduce tension to allow drift
+                // This lets the boat naturally move outward as chain is deployed
+                tensionMultiplier = 0.5  // 50% reduction during deployment
+            }
+
             let springForce = 0
 
             if (maxSwingRadius < 1.0) {
                 // Special case: rode barely deployed, use simple spring model
                 // Acts like a very stiff spring pulling boat back to anchor
-                springForce = windForce * 2.0 * (distanceToVirtualAnchor / 1.0)
+                springForce = windForce * 2.0 * (distanceToVirtualAnchor / 1.0) * tensionMultiplier
             } else if (distanceToVirtualAnchor < maxSwingRadius * 0.7) {
-                // Free drift zone: no spring force
+                // Free drift zone: no spring force (even during retrieval)
                 springForce = 0
             } else if (distanceToVirtualAnchor < maxSwingRadius * 0.95) {
                 // Deceleration zone: rode tension < wind force for gradual slowdown
                 const excessRatio = (distanceToVirtualAnchor - maxSwingRadius * 0.7) / (maxSwingRadius * 0.25)
-                springForce = windForce * Math.pow(excessRatio, 2) * 0.8
+                springForce = windForce * Math.pow(excessRatio, 2) * 0.8 * tensionMultiplier
             } else {
                 // Hard stop zone: prevent exceeding catenary limit
                 const excessRatio = (distanceToVirtualAnchor - maxSwingRadius * 0.95) / (maxSwingRadius * 0.05)
                 // Cap excessRatio to prevent exponential explosion
                 const cappedRatio = Math.min(excessRatio, 5.0)
-                springForce = windForce * 0.8 + windForce * Math.pow(cappedRatio, 6) * 10
+                springForce = windForce * 0.8 + windForce * Math.pow(cappedRatio, 6) * 10 * tensionMultiplier
             }
 
             // Add velocity damping: opposes motion along rode direction
@@ -309,9 +419,72 @@ function runTestSequence(app, sendChange) {
         const dragForceY =
             -boatVelocityY * Math.abs(boatVelocityY) * WATER_DRAG
 
+        // Motor thrust force (heading-based, not anchor-based)
+        let motorForceX = 0
+        let motorForceY = 0
+        if (motoringActive) {
+            // Motor forward: thrust in direction of boat heading
+            // Target speed: 1.0 m/s (1.94 knots) to overcome wind during retrieval
+            const TARGET_MOTOR_SPEED = 1.0 // m/s
+
+            // Calculate current velocity component in direction of heading
+            const velocityAlongHeading =
+                boatVelocityX * Math.sin(boatHeading) +
+                boatVelocityY * Math.cos(boatHeading)
+
+            // Speed error (how much slower we are than target)
+            const speedError = TARGET_MOTOR_SPEED - velocityAlongHeading
+
+            // Proportional thrust - increased gain to overcome wind
+            const MOTOR_GAIN = BOAT_MASS * 0.5
+            const motorThrust = speedError * MOTOR_GAIN
+
+            // Apply thrust in direction of heading (forward)
+            motorForceX = motorThrust * Math.sin(boatHeading)
+            motorForceY = motorThrust * Math.cos(boatHeading)
+
+            // Debug logging every ~2 seconds
+            if (Math.random() < 0.02) {
+                console.log(`Motor forward: thrust=${motorThrust.toFixed(1)}N, velAlong=${velocityAlongHeading.toFixed(2)}m/s, heading=${(boatHeading * 180 / Math.PI).toFixed(1)}°`)
+            }
+        } else if (motoringBackwardsActive && distanceToVirtualAnchor > 0) {
+            // Motor backwards - thrust opposite to heading direction
+            // Target speed: 0.8 m/s (1.55 knots) to match chain deployment rate
+            // Stop if we reach the maximum swing radius
+            if (distanceToVirtualAnchor >= maxSwingRadius * 0.90) {
+                console.log(`Reached maximum swing radius (${distanceToVirtualAnchor.toFixed(1)}m / ${maxSwingRadius.toFixed(1)}m) - stopping backwards motor`)
+                motoringBackwardsActive = false
+            } else {
+                const TARGET_MOTOR_SPEED = 0.8 // m/s (1.55 knots)
+
+                // Calculate current velocity component along heading
+                const velocityAlongHeading =
+                    boatVelocityX * Math.sin(boatHeading) +
+                    boatVelocityY * Math.cos(boatHeading)
+                // For backwards, we want negative velocity (opposite heading direction)
+                const velocityBackwards = -velocityAlongHeading
+
+                // Speed error (how much slower we are than target backwards speed)
+                const speedError = TARGET_MOTOR_SPEED - velocityBackwards
+
+                // Proportional thrust
+                const MOTOR_GAIN = BOAT_MASS * 0.5
+                const motorThrust = speedError * MOTOR_GAIN
+
+                // Apply thrust in OPPOSITE direction of heading (backwards)
+                motorForceX = -motorThrust * Math.sin(boatHeading)
+                motorForceY = -motorThrust * Math.cos(boatHeading)
+
+                // Debug logging every ~2 seconds
+                if (Math.random() < 0.02) {
+                    console.log(`Motor backwards: thrust=${motorThrust.toFixed(1)}N, velBack=${velocityBackwards.toFixed(2)}m/s, dist=${distanceToVirtualAnchor.toFixed(1)}m/${maxSwingRadius.toFixed(1)}m`)
+                }
+            }
+        }
+
         // Net force and acceleration
-        const netForceX = windForceX + rodeTensionX + dragForceX
-        const netForceY = windForceY + rodeTensionY + dragForceY
+        const netForceX = windForceX + rodeTensionX + dragForceX + motorForceX
+        const netForceY = windForceY + rodeTensionY + dragForceY + motorForceY
 
         const accelX = netForceX / BOAT_MASS
         const accelY = netForceY / BOAT_MASS
@@ -338,28 +511,34 @@ function runTestSequence(app, sendChange) {
         let deltaX = boatVelocityX * DT // meters
         let deltaY = boatVelocityY * DT // meters
 
-        // Apply gradual movement toward anchor if chain is being raised
-        if (gradualMoveDistance > 0.01) {
+        // Apply gradual movement (toward or away from anchor)
+        if (Math.abs(gradualMoveDistance) > 0.01) {
             // Move a fraction of the remaining distance each iteration
             const moveThisIteration = gradualMoveDistance / gradualMoveIterations
 
-            // Calculate direction to anchor (for gradual movement, use real anchor not virtual)
+            // Calculate direction to/from anchor (for gradual movement, use real anchor not virtual)
             const deltaLatToAnchor = anchorPos.latitude - currentLat
             const deltaLonToAnchor = anchorPos.longitude - currentLon
             const angleToRealAnchor = Math.atan2(deltaLonToAnchor, deltaLatToAnchor)
 
-            // Add gradual movement toward anchor
+            // If moveThisIteration is negative, movement is away from anchor (opposite direction)
+            // Add gradual movement toward anchor (or away if negative)
             const gradualDeltaX = moveThisIteration * Math.sin(angleToRealAnchor)
             const gradualDeltaY = moveThisIteration * Math.cos(angleToRealAnchor)
 
             deltaX += gradualDeltaX
             deltaY += gradualDeltaY
 
-            // Reduce remaining distance
-            gradualMoveDistance -= moveThisIteration
+            // Reduce remaining distance (handles both positive and negative)
+            if (gradualMoveDistance > 0) {
+                gradualMoveDistance -= moveThisIteration
+            } else {
+                gradualMoveDistance -= moveThisIteration  // Both are negative, so this increases toward zero
+            }
 
             if (Math.random() < 0.2) { // Log occasionally
-                console.log(`Gradual move: ${moveThisIteration.toFixed(2)}m toward anchor, ${gradualMoveDistance.toFixed(2)}m remaining`)
+                const direction = moveThisIteration > 0 ? 'toward' : 'away from'
+                console.log(`Gradual move: ${Math.abs(moveThisIteration).toFixed(2)}m ${direction} anchor, ${Math.abs(gradualMoveDistance).toFixed(2)}m remaining`)
             }
         }
 
@@ -371,24 +550,81 @@ function runTestSequence(app, sendChange) {
             console.log(`ERROR: Position became invalid! currentLon=${currentLon}, currentLat=${currentLat}, deltaX=${deltaX}, deltaY=${deltaY}`)
         }
 
+        // CRITICAL: Enforce slack constraint - boat cannot move beyond deployed chain length
+        // Calculate current distance from virtual anchor with new position
+        const newDeltaLat = virtualAnchorLat - currentLat
+        const newDeltaLon = virtualAnchorLon - currentLon
+        const newDeltaLatMeters = newDeltaLat / METERS_TO_LAT
+        const newDeltaLonMeters = newDeltaLon / METERS_TO_LON
+        const newDistanceToAnchor = Math.sqrt(newDeltaLatMeters * newDeltaLatMeters + newDeltaLonMeters * newDeltaLonMeters)
+
+        // Calculate slack with new distance
+        const newSlack = currentRodeDeployed - newDistanceToAnchor
+
+        // If slack would go negative, clamp position back to maintain zero slack
+        if (newSlack < 0 && chainDirection !== 'up') {
+            // Position exceeded the chain limit - move boat back so distance = rodeDeployed
+            // This maintains zero slack without going negative
+            const maxDistance = Math.max(currentRodeDeployed, 0.1)  // At least 0.1m from anchor
+            const scaleFactor = maxDistance / Math.max(newDistanceToAnchor, 0.1)
+
+            currentLat = virtualAnchorLat - (newDeltaLat * scaleFactor)
+            currentLon = virtualAnchorLon - (newDeltaLon * scaleFactor)
+
+            // Also reduce boat velocity to prevent continued drift
+            boatVelocityX *= 0.2  // Reduce velocity when hitting slack limit
+            boatVelocityY *= 0.2
+
+            if (Math.random() < 0.1) {
+                console.log(`Slack limit enforced: newSlack=${newSlack.toFixed(2)}m, clamped distance to ${maxDistance.toFixed(1)}m`)
+            }
+        }
+
         sendChange('navigation.position', {
             longitude: currentLon,
             latitude: currentLat,
         })
 
-        // Update heading - with wind >5kn, rode tension keeps bow pointing toward anchor
+        // Update heading - implements two-phase heading behavior
+        // Phase 1: Head-to-wind until rode > threshold
+        // Phase 2: Anchor-constrained heading with transition
+        const chainSlack = app.getSelfPath('navigation.anchor.chainSlack')?.value || 0
         let boatHeading
-        if (windSpeed > 5) {
-            // Boat points toward anchor (rode tension dominates)
-            // Add small random yaw variation (±5 degrees)
-            const yawVariation = (Math.random() - 0.5) * 2 * (5 * Math.PI / 180) // ±5 degrees in radians
-            boatHeading = angleToAnchor + yawVariation
-        } else {
-            // Light wind: boat can swing more freely, influenced by wind direction
+
+        // Phase thresholds (in meters of rode deployed)
+        const EARLY_DEPLOYMENT_THRESHOLD = depth + 10 + bowHeight  // ~17m at 5m depth
+        const FULL_ANCHOR_CONSTRAINT_THRESHOLD = depth + 40 + bowHeight  // ~47m at 5m depth
+
+        if (currentRodeDeployed <= EARLY_DEPLOYMENT_THRESHOLD) {
+            // Phase 1: Early deployment - boat heads into wind
+            // This allows natural drift perpendicular to wind
             const windHeading = (windDirection * Math.PI) / 180
-            // Blend between anchor direction and wind direction based on wind strength
-            const windInfluence = windSpeed / 5 // 0 to 1
-            boatHeading = angleToAnchor * (1 - windInfluence) + windHeading * windInfluence
+            // Add small random yaw variation (±10 degrees) for natural motion
+            const yawVariation = (Math.random() - 0.5) * 2 * (10 * Math.PI / 180)
+            boatHeading = windHeading + yawVariation
+        } else if (currentRodeDeployed >= FULL_ANCHOR_CONSTRAINT_THRESHOLD) {
+            // Phase 2b: Full anchor constraint - boat points toward anchor
+            // This is full rode tension control
+            const anchorHeading = angleToAnchor
+            // Add small random yaw (±3 degrees) for natural swinging
+            const yawVariation = (Math.random() - 0.5) * 2 * (3 * Math.PI / 180)
+            boatHeading = anchorHeading + yawVariation
+        } else {
+            // Phase 2a: Transition zone - blend from wind to anchor heading
+            // Linear interpolation between early deployment and full constraint thresholds
+            const transitionFraction = (currentRodeDeployed - EARLY_DEPLOYMENT_THRESHOLD) /
+                                       (FULL_ANCHOR_CONSTRAINT_THRESHOLD - EARLY_DEPLOYMENT_THRESHOLD)
+
+            const windHeading = (windDirection * Math.PI) / 180
+            const anchorHeading = angleToAnchor
+
+            // Blend the headings: start with wind, transition to anchor
+            boatHeading = windHeading * (1 - transitionFraction) + anchorHeading * transitionFraction
+
+            // Add yaw that decreases as we transition (from ±10° to ±3°)
+            const yawAmount = 10 - (transitionFraction * 7)  // 10° → 3°
+            const yawVariation = (Math.random() - 0.5) * 2 * (yawAmount * Math.PI / 180)
+            boatHeading = boatHeading + yawVariation
         }
         sendChange('navigation.headingTrue', boatHeading)
 
@@ -414,6 +650,28 @@ function runTestSequence(app, sendChange) {
             if (manualMoveGracePeriod === 0) {
                 console.log('Grace period ended - rode tension forces re-enabled')
             }
+        }
+
+        // Log test data if logging is enabled
+        if (loggingEnabled) {
+            const rodeTensionMagnitude = Math.sqrt(rodeTensionX * rodeTensionX + rodeTensionY * rodeTensionY)
+            logTestData({
+                lat: currentLat,
+                lon: currentLon,
+                heading: boatHeading,
+                velocityX: boatVelocityX,
+                velocityY: boatVelocityY,
+                distance: distanceToVirtualAnchor,
+                windSpeed: windSpeed,
+                windDirection: windDirection,
+                chainSlack: chainSlack,
+                rodeDeployed: currentRodeDeployed,
+                chainDirection: chainDirection,
+                motorActive: motoringActive,
+                motorBackwardsActive: motoringBackwardsActive,
+                windForce: windForce,
+                rodeTension: rodeTensionMagnitude
+            })
         }
 
         // Keep depth constant for testing
@@ -563,9 +821,85 @@ function moveToZone(app, zoneType) {
     return `Moved to ${zoneType} zone (${targetDistance.toFixed(1)}m from anchor)`
 }
 
+/**
+ * Start motoring toward anchor at 1 knot
+ * @param {object} app - SignalK app object
+ */
+function startMotoring(app) {
+    // Only allow when test simulation is active
+    if (testInterval === null) {
+        return 'Error: Test simulation is not running. Enable testMode in plugin settings.'
+    }
+
+    if (currentLat === null || currentLon === null) {
+        return 'Error: Simulation not initialized'
+    }
+
+    // Get anchor position
+    const anchorPos = app.getSelfPath('navigation.anchor.position')?.value
+    if (!anchorPos) {
+        return 'Error: Anchor not set'
+    }
+
+    motoringActive = true
+    motoringApp = app
+    console.log('Motor started - motoring toward anchor at 1 knot')
+    return 'Motor started - motoring toward anchor at 1 knot'
+}
+
+/**
+ * Start motoring backwards (away from anchor) at 0.5 knots
+ * Automatically stops when reaching maximum swing radius
+ * @param {object} app - SignalK app object
+ */
+function startMotoringBackwards(app) {
+    // Only allow when test simulation is active
+    if (testInterval === null) {
+        return 'Error: Test simulation is not running. Enable testMode in plugin settings.'
+    }
+
+    if (currentLat === null || currentLon === null) {
+        return 'Error: Simulation not initialized'
+    }
+
+    // Get anchor position
+    const anchorPos = app.getSelfPath('navigation.anchor.position')?.value
+    if (!anchorPos) {
+        return 'Error: Anchor not set'
+    }
+
+    motoringBackwardsActive = true
+    motoringApp = app
+    console.log('Motor started - motoring backwards (away from anchor) at 0.5 knots')
+    return 'Motor started - motoring backwards (away from anchor) at 0.5 knots'
+}
+
+/**
+ * Stop motoring (both forward and backwards)
+ */
+function stopMotoring() {
+    if (!motoringActive && !motoringBackwardsActive) {
+        return 'Motor already stopped'
+    }
+
+    const wasForward = motoringActive
+    const wasBackwards = motoringBackwardsActive
+
+    motoringActive = false
+    motoringBackwardsActive = false
+    motoringApp = null
+
+    const direction = wasForward ? 'forward' : (wasBackwards ? 'backwards' : '')
+    console.log(`Motor stopped (was ${direction})`)
+    return `Motor stopped (was ${direction})`
+}
+
 module.exports = {
     runTestSequence,
     stopTestSimulation,
     setBoatPosition,
     moveToZone,
+    startMotoring,
+    startMotoringBackwards,
+    stopMotoring,
 }

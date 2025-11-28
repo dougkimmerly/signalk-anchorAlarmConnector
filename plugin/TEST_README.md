@@ -110,6 +110,61 @@ curl -X PUT http://localhost:80/plugins/signalk-anchoralarmconnector/movetoalarm
 
 **Note:** These endpoints are available when the anchor is set and alarm zones are configured. They work in both test mode and production (for testing with real sensor data).
 
+### Motoring Controls
+
+The simulation provides motor control endpoints to test retrieval scenarios and anchor alarm behavior during motoring:
+
+**Motor Forward (Toward Anchor):**
+```bash
+curl -X PUT http://localhost:80/plugins/signalk-anchoralarmconnector/motorforward
+```
+- Motors toward anchor at 1 knot
+- Simulates boat under power moving closer to anchor
+- Useful for testing auto-retrieval scenarios
+- Creates slack in the chain as boat moves forward
+- Returns: `"Motor started - motoring toward anchor at 1 knot"`
+
+**Motor Backwards (Away from Anchor):**
+```bash
+curl -X PUT http://localhost:80/plugins/signalk-anchoralarmconnector/motorbackward
+```
+- Motors away from anchor at 0.5 knots (slower for safety)
+- Simulates boat backing down on the anchor
+- Automatically stops when reaching 90% of maximum swing radius
+- Limited by catenary equation: max distance = √(rode² - (depth + bowHeight)²)
+- Returns: `"Motor started - motoring backwards (away from anchor) at 0.5 knots"`
+
+**Stop Motor:**
+```bash
+curl -X PUT http://localhost:80/plugins/signalk-anchoralarmconnector/motorstop
+```
+- Stops both forward and backwards motoring
+- Returns: `"Motor stopped (was forward)"` or `"Motor stopped (was backwards)"`
+
+**How Motoring Works:**
+1. **Forward**: Uses proportional controller to reach 1 knot toward anchor
+   - Motor force strong enough to overcome wind
+   - Creates chain slack as boat approaches anchor
+   - Useful for testing auto-retrieval when slack is available
+
+2. **Backwards**: Uses proportional controller to reach 0.5 knots away from anchor
+   - Automatically limits distance to 90% of max swing radius
+   - Prevents exceeding physical limits of the rode
+   - Useful for testing alarm triggers and rode tension
+
+3. **Physics Integration**: Motor forces are combined with wind, rode tension, and drag
+   - Realistic acceleration and deceleration
+   - Wind can still affect boat trajectory
+   - Rode tension increases as distance from anchor increases
+
+**Use Cases:**
+- **Test Auto-Retrieval**: Motor forward to create slack, then watch auto-retrieval pull in chain
+- **Test Alarm Zones**: Motor backwards to trigger warning/emergency alarms
+- **Test Slack Calculation**: Motor forward/backwards and monitor `navigation.anchor.chainSlack`
+- **Simulate Real Operations**: Combine motoring with wind changes for realistic scenarios
+
+**Note:** Motoring endpoints only work when test simulation is active (`testMode: true`) and anchor is set.
+
 ### Monitoring the Simulation
 
 The simulation logs periodic updates:

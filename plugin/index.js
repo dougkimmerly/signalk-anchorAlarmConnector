@@ -194,9 +194,11 @@ module.exports = (app) => {
                                 handleAlarmNotification(value)
                             }
 
-                            // autoset radius after 20 minutes of no chain movement 1200000 ms
-                            // for testing set to 1 minute 60000 ms
-
+                            // DISABLED: Auto-reset anchor after chain movement timeout
+                            // This was causing automatic setManualAnchor/rodeDeployed updates
+                            // after 2 minutes of no chain movement. Use manual commands instead.
+                            // TODO: Implement manual PUT endpoint for anchor reset
+                            /*
                             if (
                                 Date.now() - lastChainMove > 120000 &&
                                 !anchorSet &&
@@ -228,6 +230,7 @@ module.exports = (app) => {
                             } else {
                                 activeUpdates = 1000
                             }
+                            */
 
                             if (
                                 lastPosition > Date.now() - 30000 &&

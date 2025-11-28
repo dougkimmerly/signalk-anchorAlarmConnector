@@ -13,7 +13,6 @@ let windInterval = null
 let currentLat = null
 let currentLon = null
 let sendChangeCallback = null
-let smoothedRode = 0 // Smoothed rode value to prevent explosions from sudden changes
 let manualMoveGracePeriod = 0 // Iterations remaining in grace period after manual move
 let virtualAnchorLat = null // Virtual anchor position for physics (not in SignalK)
 let virtualAnchorLon = null // Virtual anchor position for physics (not in SignalK)
@@ -172,29 +171,8 @@ function runTestSequence(app, sendChange, options = {}) {
         const currentDepth =
             app.getSelfPath('environment.depth.belowSurface')?.value ||
             testDepth
-        const rawRodeDeployed =
+        const currentRodeDeployed =
             app.getSelfPath('navigation.anchor.rodeDeployed')?.value || 0
-
-        // Smooth rode changes to prevent explosions from fluctuating data sources
-        // Limit rode change to 1m per iteration (0.5s), preventing sudden drops
-        const maxRodeChange = 1.0 // meters per iteration
-        if (smoothedRode === 0) {
-            smoothedRode = rawRodeDeployed // Initialize on first iteration
-            console.log(`Rode initialized: raw=${rawRodeDeployed}m, smoothed=${smoothedRode}m`)
-        } else {
-            const rodeChange = rawRodeDeployed - smoothedRode
-            if (Math.abs(rodeChange) > maxRodeChange) {
-                smoothedRode += Math.sign(rodeChange) * maxRodeChange
-                console.log(`Rode smoothing: raw=${rawRodeDeployed}m, smoothed=${smoothedRode}m (limited change)`)
-            } else {
-                smoothedRode = rawRodeDeployed
-            }
-        }
-        const currentRodeDeployed = smoothedRode
-
-        if (Math.random() < 0.05) {
-            console.log(`Rode values: raw=${rawRodeDeployed}m, smoothed=${currentRodeDeployed}m`)
-        }
 
         // Monitor chain direction for auto-retrieve boat movement
         const chainDirection = app.getSelfPath('navigation.anchor.chainDirection')?.value

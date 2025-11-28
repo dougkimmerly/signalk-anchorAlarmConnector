@@ -551,6 +551,12 @@ function runTestSequence(app, sendChange, options = {}) {
         }
 
         // CRITICAL: Enforce slack constraint - boat cannot move beyond deployed chain length
+        // HOWEVER: During initial deployment phase, allow natural drift without constraint
+        // This lets the boat move away from the anchor as the chain is being deployed
+        // to reach the seabed (depth + bowHeight + starting slack)
+        const INITIAL_DEPLOYMENT_LIMIT = currentDepth + bowHeight + 2  // ~7m at 3m depth
+        const allowSlackConstraint = currentRodeDeployed > INITIAL_DEPLOYMENT_LIMIT || chainDirection === 'up'
+
         // Calculate current distance from virtual anchor with new position
         const newDeltaLat = virtualAnchorLat - currentLat
         const newDeltaLon = virtualAnchorLon - currentLon
@@ -562,7 +568,8 @@ function runTestSequence(app, sendChange, options = {}) {
         const newSlack = currentRodeDeployed - newDistanceToAnchor
 
         // If slack would go negative, clamp position back to maintain zero slack
-        if (newSlack < 0 && chainDirection !== 'up') {
+        // BUT: Skip this constraint during initial deployment phase to allow natural drift
+        if (newSlack < 0 && allowSlackConstraint && chainDirection !== 'up') {
             // Position exceeded the chain limit - move boat back so distance = rodeDeployed
             // This maintains zero slack without going negative
             const maxDistance = Math.max(currentRodeDeployed, 0.1)  // At least 0.1m from anchor
@@ -578,6 +585,9 @@ function runTestSequence(app, sendChange, options = {}) {
             if (Math.random() < 0.1) {
                 console.log(`Slack limit enforced: newSlack=${newSlack.toFixed(2)}m, clamped distance to ${maxDistance.toFixed(1)}m`)
             }
+        } else if (newSlack < 0 && !allowSlackConstraint && Math.random() < 0.02) {
+            // Debug logging during initial deployment phase
+            console.log(`[INITIAL DEPLOYMENT] Allowing natural drift: rode=${currentRodeDeployed.toFixed(1)}m, distance=${newDistanceToAnchor.toFixed(1)}m, slack=${newSlack.toFixed(2)}m`)
         }
 
         sendChange('navigation.position', {

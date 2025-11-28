@@ -449,13 +449,13 @@ function runTestSequence(app, sendChange, options = {}) {
             }
         } else if (motoringBackwardsActive && distanceToVirtualAnchor > 0) {
             // Motor backwards - thrust opposite to heading direction
-            // Target speed: 0.8 m/s (1.55 knots) to match chain deployment rate
+            // Target speed: 1.0 m/s (1.94 knots) to match forward motor speed for faster retrieval
             // Stop if we reach the maximum swing radius
             if (distanceToVirtualAnchor >= maxSwingRadius * 0.90) {
                 console.log(`Reached maximum swing radius (${distanceToVirtualAnchor.toFixed(1)}m / ${maxSwingRadius.toFixed(1)}m) - stopping backwards motor`)
                 motoringBackwardsActive = false
             } else {
-                const TARGET_MOTOR_SPEED = 0.8 // m/s (1.55 knots)
+                const TARGET_MOTOR_SPEED = 1.0 // m/s (1.94 knots)
 
                 // Calculate current velocity component along heading
                 const velocityAlongHeading =

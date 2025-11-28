@@ -592,8 +592,8 @@ function runTestSequence(app, sendChange, options = {}) {
         let boatHeading
 
         // Phase thresholds (in meters of rode deployed)
-        const EARLY_DEPLOYMENT_THRESHOLD = depth + 10 + bowHeight  // ~17m at 5m depth
-        const FULL_ANCHOR_CONSTRAINT_THRESHOLD = depth + 40 + bowHeight  // ~47m at 5m depth
+        const EARLY_DEPLOYMENT_THRESHOLD = currentDepth + 10 + bowHeight  // ~13m at 3m depth
+        const FULL_ANCHOR_CONSTRAINT_THRESHOLD = currentDepth + 40 + bowHeight  // ~45m at 3m depth
 
         if (currentRodeDeployed <= EARLY_DEPLOYMENT_THRESHOLD) {
             // Phase 1: Early deployment - boat heads into wind

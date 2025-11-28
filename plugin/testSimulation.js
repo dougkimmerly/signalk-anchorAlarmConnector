@@ -230,7 +230,13 @@ function runTestSequence(app, sendChange, options = {}) {
             // Detect chain being lowered and set up gradual boat movement away from anchor
             const chainLowered = currentRodeDeployed - previousRodeDeployed
 
-            if (chainLowered > 0.1) { // Significant lowering (>10cm)
+            // CRITICAL: During initial deployment (rode < 7m), DO NOT use gradualMove mechanism
+            // This would artificially limit boat movement over 10 iterations, causing slack violations
+            // Let natural wind drift handle the movement instead - it's much faster and more physical
+            const INITIAL_DEPLOYMENT_LIMIT_LOCAL = currentDepth + 2 + 2  // Same as slack constraint limit
+            const isInitialDeployment = currentRodeDeployed < INITIAL_DEPLOYMENT_LIMIT_LOCAL
+
+            if (chainLowered > 0.1 && !isInitialDeployment) { // Significant lowering, but NOT during initial phase
                 // Calculate horizontal distance needed using Pythagorean theorem
                 // As chain deploys, boat drifts outward to accommodate the new length
                 let horizontalDrift = 0
@@ -249,6 +255,9 @@ function runTestSequence(app, sendChange, options = {}) {
 
                 console.log(`Chain lowered ${chainLowered.toFixed(2)}m, ` +
                            `will drift ${horizontalDrift.toFixed(2)}m away from anchor gradually over ${gradualMoveIterations} iterations`)
+            } else if (isInitialDeployment && chainLowered > 0.1) {
+                // During initial deployment, log but don't use gradual move
+                console.log(`[INITIAL DEPLOYMENT] Chain lowered ${chainLowered.toFixed(2)}m - allowing natural wind drift (no gradual move constraint)`)
             }
         }
 

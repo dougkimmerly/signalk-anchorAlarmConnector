@@ -428,42 +428,6 @@ function runTestSequence(app, sendChange, options = {}) {
         const dragForceY =
             -boatVelocityY * Math.abs(boatVelocityY) * WATER_DRAG
 
-        // Calculate boat speed for auto-engagement logic
-        const boatSpeed = Math.sqrt(boatVelocityX * boatVelocityX + boatVelocityY * boatVelocityY)
-
-        // AUTO-ENGAGEMENT: During deployment, engage motor if boat speed insufficient
-        // This prevents autoDrop from being stuck at any deployment stage
-        const isDeploying = chainDirection === 'down'
-        const speedThreshold = 0.2 // m/s - minimum speed needed during deployment
-        const maxSwingRadiusThreshold = 0.95 // Don't engage if already at or near catenary limit
-
-        if (isDeploying && boatSpeed < speedThreshold) {
-            // Auto-engage motor during deployment if boat speed is too low
-            // Check we haven't hit the catenary limit yet (avoid hard constraints)
-            if (maxSwingRadius > 0.1 && (distanceToVirtualAnchor < maxSwingRadius * maxSwingRadiusThreshold) && !motoringBackwardsActive) {
-                motoringBackwardsActive = true
-                if (Math.random() < 0.1) {
-                    console.log(`[AUTO-ENGAGE] Motor engaged: speed=${boatSpeed.toFixed(2)}m/s < ${speedThreshold}m/s during deployment, dist=${distanceToVirtualAnchor.toFixed(1)}m, maxSwing=${maxSwingRadius.toFixed(1)}m`)
-                }
-            }
-        } else if (motoringBackwardsActive) {
-            // Disengage motor if:
-            // 1. Speed is now sufficient, OR
-            // 2. We're no longer in deployment phase, OR
-            // 3. We're approaching the catenary limit (hard constraint)
-            const speedSufficient = boatSpeed > (speedThreshold + 0.15) // Hysteresis: need 0.35 m/s to disengage
-            const limitApproaching = distanceToVirtualAnchor >= maxSwingRadius * 0.95
-            const notDeploying = chainDirection !== 'down'
-
-            if (speedSufficient || limitApproaching || notDeploying) {
-                motoringBackwardsActive = false
-                const reason = speedSufficient ? 'sufficient speed' :
-                              (limitApproaching ? 'catenary limit approaching' : 'deployment ended')
-                if (Math.random() < 0.1) {
-                    console.log(`[AUTO-DISENGAGE] Motor stopped (${reason}): speed=${boatSpeed.toFixed(2)}m/s, dist=${distanceToVirtualAnchor.toFixed(1)}m, maxSwing=${maxSwingRadius.toFixed(1)}m`)
-                }
-            }
-        }
 
         // Motor thrust force (heading-based, not anchor-based)
         let motorForceX = 0
@@ -493,11 +457,12 @@ function runTestSequence(app, sendChange, options = {}) {
             if (Math.random() < 0.02) {
                 console.log(`Motor forward: thrust=${motorThrust.toFixed(1)}N, velAlong=${velocityAlongHeading.toFixed(2)}m/s, heading=${(boatHeading * 180 / Math.PI).toFixed(1)}°`)
             }
-        } else if (motoringBackwardsActive && distanceToVirtualAnchor > 0) {
+        } else if (motoringBackwardsActive) {
             // Motor backwards - thrust opposite to heading direction
-            // Target speed: 1.0 m/s (1.94 knots) to match forward motor speed for faster retrieval
-            // Stop if we reach the maximum swing radius
-            if (distanceToVirtualAnchor >= maxSwingRadius * 0.90) {
+            // Used during autoDrop to help boat move away from anchor initially
+            // And during other scenarios where we need backwards thrust
+            // Stop if we reach the maximum swing radius during autoretrieve
+            if (distanceToVirtualAnchor > 0 && distanceToVirtualAnchor >= maxSwingRadius * 0.90) {
                 console.log(`Reached maximum swing radius (${distanceToVirtualAnchor.toFixed(1)}m / ${maxSwingRadius.toFixed(1)}m) - stopping backwards motor`)
                 motoringBackwardsActive = false
             } else {

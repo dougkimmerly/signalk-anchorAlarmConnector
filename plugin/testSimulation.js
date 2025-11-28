@@ -250,11 +250,20 @@ function runTestSequence(app, sendChange, options = {}) {
         // Virtual anchor stays at the anchor position and only changes during moveToZone
         if (anchorPos &&
             typeof anchorPos.latitude === 'number' &&
-            typeof anchorPos.longitude === 'number' &&
-            (virtualAnchorLat === null || virtualAnchorLon === null)) {
-            virtualAnchorLat = anchorPos.latitude
-            virtualAnchorLon = anchorPos.longitude
-            console.log(`Virtual anchor initialized to real anchor position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+            typeof anchorPos.longitude === 'number') {
+            // If virtual anchor not set yet, initialize it
+            if (virtualAnchorLat === null || virtualAnchorLon === null) {
+                virtualAnchorLat = anchorPos.latitude
+                virtualAnchorLon = anchorPos.longitude
+                console.log(`Virtual anchor initialized to real anchor position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+            } else if (virtualAnchorLat !== anchorPos.latitude || virtualAnchorLon !== anchorPos.longitude) {
+                // Real anchor position changed (anchor settled on seabed) - update virtual anchor to match
+                // This happens when chain controller detects anchor has settled
+                console.log(`Anchor position updated from (${virtualAnchorLat.toFixed(6)}, ${virtualAnchorLon.toFixed(6)}) to (${anchorPos.latitude.toFixed(6)}, ${anchorPos.longitude.toFixed(6)})`)
+                virtualAnchorLat = anchorPos.latitude
+                virtualAnchorLon = anchorPos.longitude
+                console.log(`Virtual anchor updated to real anchor settled position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+            }
         }
 
         // During deployment (chainDirection === 'down'), auto-set anchor position if not already set

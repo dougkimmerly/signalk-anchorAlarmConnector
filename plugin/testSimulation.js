@@ -246,34 +246,46 @@ function runTestSequence(app, sendChange, options = {}) {
         const distance =
             app.getSelfPath('navigation.anchor.distanceFromBow')?.value || 0
 
-        // During deployment (chainDirection === 'down'), initialize virtual anchor even if real anchor not yet valid
-        // This allows boat to drift as chain is being lowered
-        if (chainDirection === 'down' && (virtualAnchorLat === null || virtualAnchorLon === null)) {
-            virtualAnchorLat = currentLat
-            virtualAnchorLon = currentLon
-            console.log(`Virtual anchor initialized during deployment to boat position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+        // Initialize virtual anchor when real anchor becomes available
+        // Virtual anchor stays at the anchor position and only changes during moveToZone
+        if (anchorPos &&
+            typeof anchorPos.latitude === 'number' &&
+            typeof anchorPos.longitude === 'number' &&
+            (virtualAnchorLat === null || virtualAnchorLon === null)) {
+            virtualAnchorLat = anchorPos.latitude
+            virtualAnchorLon = anchorPos.longitude
+            console.log(`Virtual anchor initialized to real anchor position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
         }
 
-        if (!anchorPos ||
+        // During deployment (chainDirection === 'down'), auto-set anchor position if not already set
+        // This allows physics to run even if the real chain controller hasn't set anchor position yet
+        if (chainDirection === 'down' && (!anchorPos ||
+            typeof anchorPos.latitude !== 'number' ||
+            typeof anchorPos.longitude !== 'number')) {
+            // Auto-set anchor position at boat's current location
+            anchorPos = {
+                latitude: currentLat,
+                longitude: currentLon
+            }
+            // Also update virtual anchor to match
+            if (virtualAnchorLat === null || virtualAnchorLon === null) {
+                virtualAnchorLat = currentLat
+                virtualAnchorLon = currentLon
+                console.log(`Virtual anchor initialized to boat position for initial deployment drift: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+            }
+            // Auto-publish the anchor position so it's available in SignalK
+            sendChange('navigation.anchor.position', {
+                latitude: currentLat,
+                longitude: currentLon,
+                altitude: 0
+            })
+            console.log(`Anchor position auto-set to boat position: ${currentLat}, ${currentLon}`)
+        } else if (!anchorPos ||
             typeof anchorPos.latitude !== 'number' ||
             typeof anchorPos.longitude !== 'number') {
-            // During chain deployment, continue physics with virtual anchor even without real anchor position
-            if (chainDirection !== 'down') {
-                console.log('WARNING: anchor position not set yet, waiting...')
-                return // Wait until anchor is set with valid coordinates (unless deploying)
-            }
-            // During deployment, use virtual anchor position instead
-            anchorPos = {
-                latitude: virtualAnchorLat || currentLat,
-                longitude: virtualAnchorLon || currentLon
-            }
-        }
-
-        // Initialize virtual anchor to boat's current position when anchor is first set (not deploying)
-        if (chainDirection !== 'down' && (virtualAnchorLat === null || virtualAnchorLon === null)) {
-            virtualAnchorLat = currentLat
-            virtualAnchorLon = currentLon
-            console.log(`Virtual anchor initialized to boat position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+            // Not deploying and no real anchor - wait
+            console.log('WARNING: anchor position not set yet, waiting...')
+            return
         }
 
         console.log(`>>> After anchor check: anchor is valid, continuing with physics...`)
@@ -302,6 +314,14 @@ function runTestSequence(app, sendChange, options = {}) {
         const windForce = 0.5 * AIR_DENSITY * WINDAGE_AREA * DRAG_COEFFICIENT * windSpeedMs * windSpeedMs
         const windForceX = windForce * Math.sin(windAngleRad) // East component
         const windForceY = windForce * Math.cos(windAngleRad) // North component
+
+        // CRITICAL: Ensure virtual anchor is initialized before physics calculations
+        // This is a safety fallback in case both initialization conditions above weren't met
+        if (virtualAnchorLat === null || virtualAnchorLon === null) {
+            virtualAnchorLat = currentLat
+            virtualAnchorLon = currentLon
+            console.log(`Virtual anchor initialized (safety fallback) to boat position: ${virtualAnchorLat}, ${virtualAnchorLon}`)
+        }
 
         // Calculate direction AND distance from boat to virtual anchor for physics
         // Virtual anchor is used for force calculations to prevent explosions after manual moves
@@ -728,10 +748,9 @@ function stopTestSimulation() {
         windInterval = null
     }
 
-    // Reset velocity, smoothed rode, and grace period
+    // Reset velocity and grace period
     boatVelocityX = 0
     boatVelocityY = 0
-    smoothedRode = 0
     manualMoveGracePeriod = 0
 
     console.log('Test simulation stopped')

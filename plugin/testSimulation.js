@@ -432,7 +432,7 @@ function runTestSequence(app, sendChange, options = {}) {
         // AUTO-ENGAGEMENT: During deployment, engage motor if boat speed insufficient
         // This prevents autoDrop from being stuck at any deployment stage
         const isDeploying = chainDirection === 'down'
-        const speedThreshold = 0.2 // m/s - minimum speed needed during deployment
+        const speedThreshold = 0.1 // m/s - minimum speed needed during deployment (lowered threshold)
         const maxSwingRadiusThreshold = 0.95 // Don't engage if already at or near catenary limit
 
         if (isDeploying && boatSpeed < speedThreshold) {
@@ -440,8 +440,8 @@ function runTestSequence(app, sendChange, options = {}) {
             // Check we haven't hit the catenary limit yet (avoid hard constraints)
             if (maxSwingRadius > 0.1 && (distanceToVirtualAnchor < maxSwingRadius * maxSwingRadiusThreshold) && !motoringBackwardsActive) {
                 motoringBackwardsActive = true
-                if (Math.random() < 0.1) {
-                    console.log(`[AUTO-ENGAGE] Motor engaged: speed=${boatSpeed.toFixed(2)}m/s < ${speedThreshold}m/s during deployment, dist=${distanceToVirtualAnchor.toFixed(1)}m, maxSwing=${maxSwingRadius.toFixed(1)}m`)
+                if (Math.random() < 0.05) {
+                    console.log(`[AUTO-ENGAGE] Motor engaged: speed=${boatSpeed.toFixed(3)}m/s < ${speedThreshold}m/s during deployment, dist=${distanceToVirtualAnchor.toFixed(1)}m, maxSwing=${maxSwingRadius.toFixed(1)}m`)
                 }
             }
         } else if (motoringBackwardsActive) {
@@ -449,7 +449,7 @@ function runTestSequence(app, sendChange, options = {}) {
             // 1. Speed is now sufficient, OR
             // 2. We're no longer in deployment phase, OR
             // 3. We're approaching the catenary limit (hard constraint)
-            const speedSufficient = boatSpeed > (speedThreshold + 0.15) // Hysteresis: need 0.35 m/s to disengage
+            const speedSufficient = boatSpeed > (speedThreshold + 0.05) // Hysteresis: need 0.15 m/s to disengage
             const limitApproaching = distanceToVirtualAnchor >= maxSwingRadius * 0.95
             const notDeploying = chainDirection !== 'down'
 
@@ -457,8 +457,8 @@ function runTestSequence(app, sendChange, options = {}) {
                 motoringBackwardsActive = false
                 const reason = speedSufficient ? 'sufficient speed' :
                               (limitApproaching ? 'catenary limit approaching' : 'deployment ended')
-                if (Math.random() < 0.1) {
-                    console.log(`[AUTO-DISENGAGE] Motor stopped (${reason}): speed=${boatSpeed.toFixed(2)}m/s, dist=${distanceToVirtualAnchor.toFixed(1)}m, maxSwing=${maxSwingRadius.toFixed(1)}m`)
+                if (Math.random() < 0.05) {
+                    console.log(`[AUTO-DISENGAGE] Motor stopped (${reason}): speed=${boatSpeed.toFixed(3)}m/s, dist=${distanceToVirtualAnchor.toFixed(1)}m, maxSwing=${maxSwingRadius.toFixed(1)}m`)
                 }
             }
         }
@@ -598,7 +598,9 @@ function runTestSequence(app, sendChange, options = {}) {
         // HOWEVER: During initial deployment phase, allow natural drift without constraint
         // This lets the boat move away from the anchor as the chain is being deployed
         // to reach the seabed (depth + bowHeight + starting slack)
-        const INITIAL_DEPLOYMENT_LIMIT = currentDepth + bowHeight + 2  // ~7m at 3m depth
+        // Initial deployment naturally reaches ~7m (depth 3m + bowHeight 2m + slack 2m)
+        // Once rode exceeds this, re-enable slack constraint to prevent excessive drift
+        const INITIAL_DEPLOYMENT_LIMIT = 7  // depth(3) + bowHeight(2) + slack(2) = natural stopping point
         const allowSlackConstraint = currentRodeDeployed > INITIAL_DEPLOYMENT_LIMIT || chainDirection === 'up'
 
         // Calculate current distance from virtual anchor with new position

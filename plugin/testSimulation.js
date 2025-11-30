@@ -22,6 +22,7 @@ let gradualMoveIterations = 10 // Spread movement over this many iterations for 
 let motoringActive = false // Track if motor is running forward
 let motoringBackwardsActive = false // Track if motor is running backwards
 let motoringApp = null // Store app reference for motoring
+let previousBoatHeading = 0 // Track previous heading for when anchor is not deployed
 
 // Data logging for testing framework
 let testDataLog = []
@@ -301,7 +302,8 @@ function runTestSequence(app, sendChange, options = {}) {
         )
 
         // Wind force calculation
-        // Convert wind direction to radians (direction wind is blowing TO)
+        // windDirection = direction wind is coming FROM (e.g., 180 = blowing from South)
+        // To get force direction, convert to where wind pushes: add 180°
         const windAngleRad = (((windDirection + 180) % 360) * Math.PI) / 180
         const windSpeedMs = windSpeed * 0.514444 // knots to m/s
 
@@ -650,47 +652,31 @@ function runTestSequence(app, sendChange, options = {}) {
             latitude: currentLat,
         })
 
-        // Update heading - implements two-phase heading behavior
-        // Phase 1: Head-to-wind until rode > threshold
-        // Phase 2: Anchor-constrained heading with transition
-        const chainSlack = app.getSelfPath('navigation.anchor.chainSlack')?.value || 0
+        // Update heading - implements windvane behavior whenever anchor is deployed
+        // When a valid anchor position exists, the boat acts like a weathervane:
+        // it rotates around the anchor point to align with the wind direction
         let boatHeading
 
-        // Phase thresholds (in meters of rode deployed)
-        const EARLY_DEPLOYMENT_THRESHOLD = currentDepth + 10 + bowHeight  // ~13m at 3m depth
-        const FULL_ANCHOR_CONSTRAINT_THRESHOLD = currentDepth + 40 + bowHeight  // ~45m at 3m depth
-
-        if (currentRodeDeployed <= EARLY_DEPLOYMENT_THRESHOLD) {
-            // Phase 1: Early deployment - boat heads into wind
-            // This allows natural drift perpendicular to wind
+        // Windvane heading applies whenever there's a valid anchor position (anchor is deployed)
+        if (anchorPos && typeof anchorPos.latitude === 'number' && typeof anchorPos.longitude === 'number') {
+            // Windvane behavior: point into the wind
+            // This is the natural behavior of a boat anchored and swinging on its anchor
+            // The boat rotates to point toward the wind SOURCE
+            // windDirection = direction wind is coming FROM (e.g., 180 = wind from South)
+            // boat should face toward that source (heading = 180 = facing South into the wind)
+            // and gets pushed in the opposite direction (North, toward 0)
             const windHeading = (windDirection * Math.PI) / 180
-            // Add small random yaw variation (±10 degrees) for natural motion
-            const yawVariation = (Math.random() - 0.5) * 2 * (10 * Math.PI / 180)
+
+            // Add small random yaw variation (±5 degrees) for natural oscillation
+            // Simulates realistic weathervaning with some side-to-side motion
+            const yawVariation = (Math.random() - 0.5) * 2 * (5 * Math.PI / 180)
             boatHeading = windHeading + yawVariation
-        } else if (currentRodeDeployed >= FULL_ANCHOR_CONSTRAINT_THRESHOLD) {
-            // Phase 2b: Full anchor constraint - boat points toward anchor
-            // This is full rode tension control
-            const anchorHeading = angleToAnchor
-            // Add small random yaw (±3 degrees) for natural swinging
-            const yawVariation = (Math.random() - 0.5) * 2 * (3 * Math.PI / 180)
-            boatHeading = anchorHeading + yawVariation
         } else {
-            // Phase 2a: Transition zone - blend from wind to anchor heading
-            // Linear interpolation between early deployment and full constraint thresholds
-            const transitionFraction = (currentRodeDeployed - EARLY_DEPLOYMENT_THRESHOLD) /
-                                       (FULL_ANCHOR_CONSTRAINT_THRESHOLD - EARLY_DEPLOYMENT_THRESHOLD)
-
-            const windHeading = (windDirection * Math.PI) / 180
-            const anchorHeading = angleToAnchor
-
-            // Blend the headings: start with wind, transition to anchor
-            boatHeading = windHeading * (1 - transitionFraction) + anchorHeading * transitionFraction
-
-            // Add yaw that decreases as we transition (from ±10° to ±3°)
-            const yawAmount = 10 - (transitionFraction * 7)  // 10° → 3°
-            const yawVariation = (Math.random() - 0.5) * 2 * (yawAmount * Math.PI / 180)
-            boatHeading = boatHeading + yawVariation
+            // No anchor deployed: use previous heading or default
+            boatHeading = previousBoatHeading || 0
         }
+
+        previousBoatHeading = boatHeading
         sendChange('navigation.headingTrue', boatHeading)
 
         // Publish calculated boat speed based on velocity

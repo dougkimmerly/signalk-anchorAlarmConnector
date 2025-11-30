@@ -116,10 +116,13 @@ function runTestSequence(app, sendChange, options = {}) {
         const gust = (Math.random() - 0.5) * 6
         windSpeed = Math.max(5, Math.min(20, windSpeed + gust))
 
-        // Gradual wind shift (±2° every 10 seconds)
-        windDirection += (Math.random() - 0.5) * 4
-        if (windDirection < 0) windDirection += 360
-        if (windDirection >= 360) windDirection -= 360
+        // Gradual wind shift (±2° occasionally for natural wind movement)
+        // Only shift wind direction ~10% of the time to avoid excessive oscillation
+        if (Math.random() < 0.1) {
+            windDirection += (Math.random() - 0.5) * 4
+            if (windDirection < 0) windDirection += 360
+            if (windDirection >= 360) windDirection -= 360
+        }
 
         // Update wind data in SignalK
         sendChange('environment.wind.speedTrue', windSpeed * 0.514444) // knots to m/s

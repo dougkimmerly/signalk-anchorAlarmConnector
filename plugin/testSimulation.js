@@ -665,12 +665,7 @@ function runTestSequence(app, sendChange, options = {}) {
             // windDirection = direction wind is coming FROM (e.g., 180 = wind from South)
             // boat should face toward that source (heading = 180 = facing South into the wind)
             // and gets pushed in the opposite direction (North, toward 0)
-            const windHeading = (windDirection * Math.PI) / 180
-
-            // Add small random yaw variation (±5 degrees) for natural oscillation
-            // Simulates realistic weathervaning with some side-to-side motion
-            const yawVariation = (Math.random() - 0.5) * 2 * (5 * Math.PI / 180)
-            boatHeading = windHeading + yawVariation
+            boatHeading = (windDirection * Math.PI) / 180
         } else {
             // No anchor deployed: use previous heading or default
             boatHeading = previousBoatHeading || 0

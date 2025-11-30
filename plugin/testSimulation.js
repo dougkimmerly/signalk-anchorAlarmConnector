@@ -117,8 +117,9 @@ function runTestSequence(app, sendChange, options = {}) {
         windSpeed = Math.max(5, Math.min(20, windSpeed + gust))
 
         // Gradual wind shift (±2° occasionally for natural wind movement)
-        // Only shift wind direction ~10% of the time to avoid excessive oscillation
-        if (Math.random() < 0.1) {
+        // Only shift wind direction ~1% of the time to allow smooth boat movement
+        // (reduces changes from ~10/60s to ~1/60s during deployment)
+        if (Math.random() < 0.01) {
             windDirection += (Math.random() - 0.5) * 4
             if (windDirection < 0) windDirection += 360
             if (windDirection >= 360) windDirection -= 360
@@ -218,7 +219,8 @@ function runTestSequence(app, sendChange, options = {}) {
             const INITIAL_DEPLOYMENT_LIMIT_LOCAL = currentDepth + 2 + 2  // Same as slack constraint limit
             const isInitialDeployment = currentRodeDeployed < INITIAL_DEPLOYMENT_LIMIT_LOCAL
 
-            if (chainLowered > 0.1 && !isInitialDeployment) { // Significant lowering, but NOT during initial phase
+            if (chainLowered > 0.1 && !isInitialDeployment && chainDirection !== 'down') {
+                // Significant lowering, NOT during initial phase, AND not during active deployment
                 // Calculate horizontal distance needed using Pythagorean theorem
                 // As chain deploys, boat drifts outward to accommodate the new length
                 let horizontalDrift = 0
@@ -237,9 +239,10 @@ function runTestSequence(app, sendChange, options = {}) {
 
                 console.log(`Chain lowered ${chainLowered.toFixed(2)}m, ` +
                            `will drift ${horizontalDrift.toFixed(2)}m away from anchor gradually over ${gradualMoveIterations} iterations`)
-            } else if (isInitialDeployment && chainLowered > 0.1) {
-                // During initial deployment, log but don't use gradual move
-                console.log(`[INITIAL DEPLOYMENT] Chain lowered ${chainLowered.toFixed(2)}m - allowing natural wind drift (no gradual move constraint)`)
+            } else if ((isInitialDeployment || chainDirection === 'down') && chainLowered > 0.1) {
+                // During active deployment (chainDirection === 'down'), allow natural wind drift
+                // Do NOT apply gradual move constraint - let wind drive the boat naturally
+                console.log(`[ACTIVE DEPLOYMENT] Chain lowered ${chainLowered.toFixed(2)}m - allowing natural wind drift (no gradual move constraint)`)
             }
         }
 

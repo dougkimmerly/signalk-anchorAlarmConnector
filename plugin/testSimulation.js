@@ -359,82 +359,12 @@ function runTestSequence(app, sendChange, options = {}) {
             console.log(`Wind: direction=${windDirection}°, angleRad=${windAngleRad.toFixed(3)}, forceY=${windForceY.toFixed(1)}`)
         }
 
-        // Rode tension force (acts as restoring force toward anchor)
+        // REMOVED: Rode tension force (spring + damping)
+        // Reason: Slack constraint provides gradual, tunable limiting of boat movement
+        // Rode tension created abrupt jerks when boat exceeded rope length (unrealistic)
+        // Single mechanism (slack constraint) is simpler, more maintainable, and more natural
         let rodeTensionX = 0
         let rodeTensionY = 0
-
-        // CRITICAL FIX: During anchor deployment (chainDirection === 'down'), the rope is SLACK
-        // and cannot support the boat. Do NOT apply any rode tension during deployment - only wind
-        // Once anchor is dropped and settled (rode > 7.5m), rope becomes taut and can support the boat
-        if (distanceToVirtualAnchor > 0 && chainDirection !== 'down') {
-
-            // Rode tension: spring force + velocity damping to prevent bounce
-            // Based on real-world anchoring: rode acts as spring-damper system
-
-            // Calculate tension adjustment based on chain retrieval
-            let tensionMultiplier = 1.0  // Default multiplier
-
-            if (chainDirection === 'up') {
-                // During retrieval: increase tension based on suspended chain weight
-                // Suspended chain weight = chain in water (rode - vertical component)
-                const verticalRode = currentDepth + bowHeight
-                const suspendedChainLength = Math.max(0, currentRodeDeployed - verticalRode)
-                // Apply about 50% of suspended chain weight as proportional force
-                // Normalize by relating to typical wind force
-                const chainWeightForce = suspendedChainLength * 50  // ~50 N per meter of suspended chain
-                tensionMultiplier = 1.0 + (chainWeightForce / windForce) * 0.5  // 50% of normalized weight
-                tensionMultiplier = Math.min(tensionMultiplier, 2.0)  // Cap at 2x for stability
-            }
-
-            let springForce = 0
-
-            if (maxSwingRadius < 1.0) {
-                // Special case: rode barely deployed, use simple spring model
-                // Acts like a very stiff spring pulling boat back to anchor
-                springForce = windForce * 2.0 * (distanceToVirtualAnchor / 1.0) * tensionMultiplier
-            } else if (distanceToVirtualAnchor < maxSwingRadius * 0.7) {
-                // Free drift zone: no spring force (even during retrieval)
-                springForce = 0
-            } else if (distanceToVirtualAnchor < maxSwingRadius * 0.95) {
-                // Deceleration zone: rode tension < wind force for gradual slowdown
-                const excessRatio = (distanceToVirtualAnchor - maxSwingRadius * 0.7) / (maxSwingRadius * 0.25)
-                springForce = windForce * Math.pow(excessRatio, 2) * 0.8 * tensionMultiplier
-            } else {
-                // Hard stop zone: prevent exceeding catenary limit
-                const excessRatio = (distanceToVirtualAnchor - maxSwingRadius * 0.95) / (maxSwingRadius * 0.05)
-                // Cap excessRatio to prevent exponential explosion
-                const cappedRatio = Math.min(excessRatio, 5.0)
-                springForce = windForce * 0.8 + windForce * Math.pow(cappedRatio, 6) * 10 * tensionMultiplier
-            }
-
-            // Add velocity damping: opposes motion along rode direction
-            // This dissipates energy and prevents elastic bounce
-            const velocityAlongRode =
-                (boatVelocityX * Math.sin(angleToAnchor) +
-                 boatVelocityY * Math.cos(angleToAnchor))
-            // Damping opposes velocity (negative sign), coefficient tuned for critical damping
-            const dampingForce = -velocityAlongRode * BOAT_MASS * 0.5
-
-            let rodeTension = springForce + dampingForce
-
-            // CRITICAL: Cap rode tension to prevent explosions when boat is far from anchor
-            // Maximum reasonable rode tension is ~100x wind force (way beyond realistic)
-            const maxRodeTension = windForce * 100
-            if (Math.abs(rodeTension) > maxRodeTension) {
-                rodeTension = Math.sign(rodeTension) * maxRodeTension
-            }
-
-            // Gradually ramp up rode tension after manual position changes
-            // This prevents sudden shock when boat is moved to new position
-            if (manualMoveGracePeriod > 0) {
-                // Scale from 0% to 100% as grace period counts down from 10 to 0
-                const rampUpFactor = (10 - manualMoveGracePeriod) / 10
-                rodeTension *= rampUpFactor
-            }
-
-            rodeTensionX = rodeTension * Math.sin(angleToAnchor)
-            rodeTensionY = rodeTension * Math.cos(angleToAnchor)
-        }
 
         // Water drag force (opposes velocity)
         const dragForceX =

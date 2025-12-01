@@ -308,11 +308,10 @@ function runTestSequence(app, sendChange, options = {}) {
         )
 
         // Wind force calculation
-        // windDirection = direction wind is coming FROM (e.g., 180 = blowing from South)
-        // To get force direction, convert to where wind pushes: opposite of source (add 180°)
-        // Example: wind from 180° (south) pushes toward 0° (north)
-        const windPushDirection = (windDirection + 180) % 360  // Direction wind pushes TO
-        const windAngleRad = (windPushDirection * Math.PI) / 180  // Convert to radians
+        // CRITICAL FIX: windDirection is DIRECTION WIND PUSHES TO, not FROM
+        // Using windDirection directly produces correct northward boat movement with wind
+        // The +180° conversion was inverting wind direction, causing wrong movement
+        const windAngleRad = (windDirection * Math.PI) / 180  // Convert to radians
         const windSpeedMs = windSpeed * 0.514444 // knots to m/s
 
         // Wind force proportional to speed squared

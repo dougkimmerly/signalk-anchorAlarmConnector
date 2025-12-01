@@ -119,14 +119,15 @@ function runTestSequence(app, sendChange, options = {}) {
         const gust = (Math.random() - 0.5) * 6
         windSpeed = Math.max(5, Math.min(20, windSpeed + gust))
 
-        // Gradual wind shift (±2° occasionally for natural wind movement)
-        // Only shift wind direction ~1% of the time to allow smooth boat movement
-        // (reduces changes from ~10/60s to ~1/60s during deployment)
-        if (Math.random() < 0.01) {
-            windDirection += (Math.random() - 0.5) * 4
-            if (windDirection < 0) windDirection += 360
-            if (windDirection >= 360) windDirection -= 360
-        }
+        // DISABLED: Wind direction shifts during testing
+        // Reason: Random wind shifts cause inconsistent boat movement between tests
+        // Need stable wind direction to validate wind force physics
+        // Will re-enable for more realistic simulation after physics is validated
+        // if (Math.random() < 0.01) {
+        //     windDirection += (Math.random() - 0.5) * 4
+        //     if (windDirection < 0) windDirection += 360
+        //     if (windDirection >= 360) windDirection -= 360
+        // }
 
         // Update wind data in SignalK
         sendChange('environment.wind.speedTrue', windSpeed * 0.514444) // knots to m/s

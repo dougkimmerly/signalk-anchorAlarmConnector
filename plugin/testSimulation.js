@@ -309,8 +309,10 @@ function runTestSequence(app, sendChange, options = {}) {
 
         // Wind force calculation
         // windDirection = direction wind is coming FROM (e.g., 180 = blowing from South)
-        // To get force direction, convert to where wind pushes: add 180°
-        const windAngleRad = (((windDirection + 180) % 360) * Math.PI) / 180
+        // To get force direction, convert to where wind pushes: opposite of source (add 180°)
+        // Example: wind from 180° (south) pushes toward 0° (north)
+        const windPushDirection = (windDirection + 180) % 360  // Direction wind pushes TO
+        const windAngleRad = (windPushDirection * Math.PI) / 180  // Convert to radians
         const windSpeedMs = windSpeed * 0.514444 // knots to m/s
 
         // Wind force proportional to speed squared
@@ -322,6 +324,10 @@ function runTestSequence(app, sendChange, options = {}) {
         const windForce = 0.5 * AIR_DENSITY * WINDAGE_AREA * DRAG_COEFFICIENT * windSpeedMs * windSpeedMs
         const windForceX = windForce * Math.sin(windAngleRad) // East component
         const windForceY = windForce * Math.cos(windAngleRad) // North component
+
+        if (Math.random() < 0.02) {
+            console.log(`WIND DEBUG: direction=${windDirection}°, angleRad=${windAngleRad.toFixed(3)}, sin=${Math.sin(windAngleRad).toFixed(3)}, cos=${Math.cos(windAngleRad).toFixed(3)}, forceX=${windForceX.toFixed(1)}, forceY=${windForceY.toFixed(1)}`)
+        }
 
         // CRITICAL: Ensure virtual anchor is initialized before physics calculations
         // This is a safety fallback in case both initialization conditions above weren't met
@@ -347,6 +353,12 @@ function runTestSequence(app, sendChange, options = {}) {
         const deltaLatMeters = deltaLat / METERS_TO_LAT
         const deltaLonMeters = deltaLon / METERS_TO_LON
         const distanceToVirtualAnchor = Math.sqrt(deltaLatMeters * deltaLatMeters + deltaLonMeters * deltaLonMeters)
+
+        // DEBUG: Log wind direction and force at start of physics loop
+        if (Math.random() < 0.001) {
+            console.log(`=== PHYSICS DEBUG [rode=${currentRodeDeployed.toFixed(1)}m, chainDir=${chainDirection}] ===`)
+            console.log(`Wind: direction=${windDirection}°, angleRad=${windAngleRad.toFixed(3)}, forceY=${windForceY.toFixed(1)}`)
+        }
 
         // Rode tension force (acts as restoring force toward anchor)
         let rodeTensionX = 0
@@ -535,6 +547,10 @@ function runTestSequence(app, sendChange, options = {}) {
         const accelX = netForceX / BOAT_MASS
         const accelY = netForceY / BOAT_MASS
 
+        if (Math.random() < 0.001) {
+            console.log(`FORCES FULL CHAIN: wind=(${windForceX.toFixed(1)}, ${windForceY.toFixed(1)}), rode=(${rodeTensionX.toFixed(1)}, ${rodeTensionY.toFixed(1)}), drag=(${dragForceX.toFixed(1)}, ${dragForceY.toFixed(1)}), net=(${netForceX.toFixed(1)}, ${netForceY.toFixed(1)}), accel=(${accelX.toFixed(4)}, ${accelY.toFixed(4)}) m/s²`)
+        }
+
         // Debug: check for NaN or Infinity in forces/acceleration
         if (isNaN(accelX) || isNaN(accelY) || isNaN(boatVelocityX) || isNaN(boatVelocityY) ||
             !isFinite(accelX) || !isFinite(accelY) || !isFinite(boatVelocityX) || !isFinite(boatVelocityY)) {
@@ -556,6 +572,10 @@ function runTestSequence(app, sendChange, options = {}) {
         // Update position
         let deltaX = boatVelocityX * DT // meters
         let deltaY = boatVelocityY * DT // meters
+
+        if (Math.random() < 0.001) {
+            console.log(`VELOCITY UPDATE: velBefore=(${(boatVelocityX - accelX*DT).toFixed(3)}, ${(boatVelocityY - accelY*DT).toFixed(3)}), accel*DT=(${(accelX*DT).toFixed(3)}, ${(accelY*DT).toFixed(3)}), velAfter=(${boatVelocityX.toFixed(3)}, ${boatVelocityY.toFixed(3)}), delta=(${deltaX.toFixed(3)}, ${deltaY.toFixed(3)})`)
+        }
 
         // Apply gradual movement (toward or away from anchor)
         if (Math.abs(gradualMoveDistance) > 0.01) {
@@ -588,22 +608,50 @@ function runTestSequence(app, sendChange, options = {}) {
             }
         }
 
-        currentLon = currentLon + deltaX * METERS_TO_LON
-        currentLat = currentLat + deltaY * METERS_TO_LAT
+        const oldLon = currentLon
+        const oldLat = currentLat
+        const latDelta = deltaY * METERS_TO_LAT
+        const lonDelta = deltaX * METERS_TO_LON
+
+        // COMPREHENSIVE LOGGING before position update
+        if (Math.abs(deltaY) > 0.01 || Math.abs(deltaX) > 0.01) {
+            console.log(`[POSITION UPDATE DETAIL] ========`)
+            console.log(`  Before: lat=${oldLat.toFixed(10)}, lon=${oldLon.toFixed(10)}`)
+            console.log(`  deltaX=${deltaX.toFixed(6)}m, deltaY=${deltaY.toFixed(6)}m`)
+            console.log(`  METERS_TO_LAT=${METERS_TO_LAT}, METERS_TO_LON=${METERS_TO_LON}`)
+            console.log(`  Calculated deltas: latDelta=${latDelta.toFixed(10)}°, lonDelta=${lonDelta.toFixed(10)}°`)
+            console.log(`  After calc: lat would be ${(oldLat + latDelta).toFixed(10)}, lon would be ${(oldLon + lonDelta).toFixed(10)}`)
+            console.log(`  Wind force: windForceY=${windForceY.toFixed(1)}N`)
+            console.log(`  Velocity: boatVelY=${boatVelocityY.toFixed(3)}m/s, boatVelX=${boatVelocityX.toFixed(3)}m/s`)
+            console.log(`  Accel: accelY=${(windForceY / 5000).toFixed(6)}m/s²`)
+            console.log(`  Rode=${currentRodeDeployed.toFixed(1)}m, chainDir=${chainDirection}`)
+        }
+
+        currentLon = currentLon + lonDelta
+        currentLat = currentLat + latDelta
+
+        // Debug: log position updates frequently
+        if (Math.abs(deltaY) > 0.01 || Math.abs(deltaX) > 0.01) {
+            console.log(`  After update: lat=${currentLat.toFixed(10)}, lon=${currentLon.toFixed(10)}`)
+            console.log(`  Result: ΔLat=${(currentLat - oldLat).toFixed(10)} [${(currentLat - oldLat) > 0 ? 'NORTH↑' : (currentLat - oldLat) < 0 ? 'SOUTH↓' : 'STATIC'}]`)
+            console.log(`========`)
+        }
 
         // Debug: log if position becomes null
         if (currentLon === null || currentLat === null || isNaN(currentLon) || isNaN(currentLat)) {
             console.log(`ERROR: Position became invalid! currentLon=${currentLon}, currentLat=${currentLat}, deltaX=${deltaX}, deltaY=${deltaY}`)
         }
 
-        // CRITICAL: Enforce slack constraint - boat cannot move beyond deployed chain length
-        // HOWEVER: During initial deployment phase, allow natural drift without constraint
-        // This lets the boat move away from the anchor as the chain is being deployed
-        // to reach the seabed (depth + bowHeight + starting slack)
-        // Initial deployment naturally reaches ~7m (depth 3m + bowHeight 2m + slack 2m)
-        // Once rode exceeds this, re-enable slack constraint to prevent excessive drift
-        const INITIAL_DEPLOYMENT_LIMIT = 7  // depth(3) + bowHeight(2) + slack(2) = natural stopping point
-        const allowSlackConstraint = currentRodeDeployed > INITIAL_DEPLOYMENT_LIMIT || chainDirection === 'up'
+        // CRITICAL: Enforce slack constraint based on ACTUAL chain slack
+        // Slack constraint behavior (as specified):
+        // - When chain slack <= 0: Apply INFINITE constraint (prevent all movement beyond rope length)
+        // - When 0 < chain slack < depth: Apply PROPORTIONAL constraint (reduce based on available slack)
+        // - When chain slack >= depth: Apply NO constraint (plenty of rope available)
+        //
+        // This allows:
+        // - Natural wind-driven drift DURING deployment when slack is positive
+        // - Prevents boat from exceeding rope length when slack = 0
+        // - Scales constraint smoothly as rope extends
 
         // Calculate current distance from virtual anchor with new position
         const newDeltaLat = virtualAnchorLat - currentLat
@@ -612,45 +660,82 @@ function runTestSequence(app, sendChange, options = {}) {
         const newDeltaLonMeters = newDeltaLon / METERS_TO_LON
         const newDistanceToAnchor = Math.sqrt(newDeltaLatMeters * newDeltaLatMeters + newDeltaLonMeters * newDeltaLonMeters)
 
-        // Calculate slack with new distance
-        const newSlack = currentRodeDeployed - newDistanceToAnchor
+        // Calculate actual chain slack: how much rope is available beyond distance to anchor
+        const chainSlack = currentRodeDeployed - newDistanceToAnchor
 
-        // Slack constraint: boat cannot exceed deployed rope length
-        // When slack < 0, clamp boat position back to the slack=0 boundary
-        if (allowSlackConstraint && chainDirection !== 'up') {
-            if (newSlack < 0) {
-                // Progressive constraint: gently slow boat as it approaches limit
-                // This prevents jerky bouncing from hard velocity clamps
-                // BUT: motor backward may push boat backward, so allow more motion
+        // Apply slack constraint scaled to 5:1 scope deployment progress
+        // Constraint ramps from 0% at 15% of target scope to 100% at full target scope
+        const totalDepth = currentDepth + bowHeight  // Total water + bow height
+        const targetRode = totalDepth * 5  // 5:1 scope target = 25m for 5m total depth
+        const constraintStartRode = targetRode * 0.15  // Start constraint at 15% of target
+        const constraintEndRode = targetRode * 1.0    // Full constraint at 100% of target
 
-                // Calculate how much slack we've exceeded (negative slack is excess)
-                const slackViolation = Math.abs(newSlack)  // Positive excess distance
-                const violationFraction = Math.min(1.0, slackViolation / (currentRodeDeployed * 0.1))  // Fraction of rode length
+        let constraintStrength = 0  // 0 = no constraint, 1 = full constraint
 
-                // Progressive damping: as violation increases, damping increases
-                // At 0m violation: 0.98x (2% reduction)
-                // At 10% of rode: 0.85x (15% reduction)
-                // At 20%+ of rode: 0.70x (30% reduction)
-                // WEAKENED from 0.95-0.50 to 0.98-0.70 to allow backward motion
-                const dampingFactor = Math.max(0.70, 0.98 - violationFraction * 0.28)
-                boatVelocityX *= dampingFactor
-                boatVelocityY *= dampingFactor
+        if (currentRodeDeployed < constraintStartRode) {
+            // Before 15% of target: no constraint, allow free wind drift
+            constraintStrength = 0
+        } else if (currentRodeDeployed >= constraintEndRode) {
+            // At or past target scope: full constraint
+            constraintStrength = 1.0
+        } else {
+            // Between 15% and 100%: ramp constraint strength linearly
+            const deploymentRange = constraintEndRode - constraintStartRode
+            const currentProgress = currentRodeDeployed - constraintStartRode
+            constraintStrength = Math.min(1.0, currentProgress / deploymentRange)
+        }
 
-                // Clamp position back, but only if significantly overshooting
-                if (newDistanceToAnchor > 0.1 && slackViolation > 0.5) {
+        // Apply constraint based on actual slack and constraint strength
+        if (Math.random() < 0.1) {
+            console.log(`DEBUG CONSTRAINT: rode=${currentRodeDeployed.toFixed(1)}m, constraintStart=${constraintStartRode.toFixed(1)}m, constraintEnd=${constraintEndRode.toFixed(1)}m, strength=${constraintStrength.toFixed(2)}, distance=${newDistanceToAnchor.toFixed(3)}m, slack=${chainSlack.toFixed(2)}m`)
+        }
+        if (constraintStrength > 0.01) {  // Only apply if meaningful (>1%)
+            if (chainSlack <= 0) {
+                // NO SLACK: Apply infinite constraint scaled by strength
+                if (newDistanceToAnchor > 0.1) {
                     const scaleFactor = currentRodeDeployed / newDistanceToAnchor
-                    // Scale deltas to position the boat exactly at rode distance from anchor
                     currentLat = virtualAnchorLat - (newDeltaLat * scaleFactor)
                     currentLon = virtualAnchorLon - (newDeltaLon * scaleFactor)
                 }
+                // Dampen velocity proportional to constraint strength
+                const velocityDampFactor = 1.0 - (constraintStrength * 0.7)  // 0.3 to 1.0
+                boatVelocityX *= velocityDampFactor
+                boatVelocityY *= velocityDampFactor
 
                 if (Math.random() < 0.05) {
-                    console.log(`Slack constraint: progressive damping=${dampingFactor.toFixed(2)}, slack=${newSlack.toFixed(2)}m, violation=${slackViolation.toFixed(2)}m`)
+                    const speed = Math.sqrt(boatVelocityX * boatVelocityX + boatVelocityY * boatVelocityY)
+                    console.log(`[NO SLACK] rode=${currentRodeDeployed.toFixed(1)}m/${targetRode.toFixed(1)}m (target), constraint=${constraintStrength.toFixed(2)}, slack=${chainSlack.toFixed(2)}m, speed=${speed.toFixed(2)}m/s`)
+                }
+            } else if (chainSlack > 0 && chainSlack < currentDepth) {
+                // PARTIAL SLACK: Apply proportional constraint based on slack + constraint strength
+                const slackConstraintFactor = 1.0 - (chainSlack / currentDepth)
+                const combinedConstraint = slackConstraintFactor * constraintStrength
+
+                // Apply velocity damping
+                const dampingFactor = Math.max(0.7, 1.0 - combinedConstraint * 0.3)
+                boatVelocityX *= dampingFactor
+                boatVelocityY *= dampingFactor
+
+                if (Math.random() < 0.03) {
+                    const speed = Math.sqrt(boatVelocityX * boatVelocityX + boatVelocityY * boatVelocityY)
+                    console.log(`[PARTIAL SLACK] rode=${currentRodeDeployed.toFixed(1)}m/${targetRode.toFixed(1)}m, scope-constraint=${constraintStrength.toFixed(2)}, slack=${chainSlack.toFixed(2)}m, combined=${combinedConstraint.toFixed(2)}, speed=${speed.toFixed(2)}m/s`)
                 }
             }
-        } else if (newSlack < 0 && !allowSlackConstraint && Math.random() < 0.02) {
-            // Debug logging during initial deployment phase
-            console.log(`[INITIAL DEPLOYMENT] Allowing natural drift: rode=${currentRodeDeployed.toFixed(1)}m, distance=${newDistanceToAnchor.toFixed(1)}m, slack=${newSlack.toFixed(2)}m`)
+            // else: slack >= depth - no constraint
+        } else if (Math.random() < 0.02) {
+            // Debug: log during initial deployment phase
+            console.log(`[INITIAL DEPLOYMENT] No constraint yet: rode=${currentRodeDeployed.toFixed(1)}m < start threshold=${constraintStartRode.toFixed(1)}m`)
+        }
+
+        // DEBUG: Always log position when it changes significantly
+        const positionChanged = (Math.abs(deltaY) > 0.001 || Math.abs(deltaX) > 0.001)
+        if (positionChanged) {
+            console.log(`[POSITION CHANGE] lat: ${oldLat.toFixed(10)} → ${currentLat.toFixed(10)}, lon: ${oldLon.toFixed(10)} → ${currentLon.toFixed(10)}, deltaY=${deltaY.toFixed(4)}m, chainDir=${chainDirection}, rode=${currentRodeDeployed.toFixed(1)}m`)
+        }
+
+        // Every 10 seconds, log that we're updating position
+        if (currentTimestamp % 10000 < 50) {
+            console.log(`[POS UPDATE] Publishing: lat=${currentLat.toFixed(10)}, lon=${currentLon.toFixed(10)}, rode=${currentRodeDeployed.toFixed(1)}m`)
         }
 
         sendChange('navigation.position', {

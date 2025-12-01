@@ -29,6 +29,9 @@ let testDataLog = []
 let loggingEnabled = false
 let testStartTime = null
 
+// DEBUG: Control slack constraint for wind movement testing
+let DISABLE_SLACK_CONSTRAINT = true  // Disable while focusing on wind movement physics
+
 /**
  * Runs a realistic wind-based anchor test simulation
  * @param {object} app - SignalK app object
@@ -616,9 +619,9 @@ function runTestSequence(app, sendChange, options = {}) {
 
         // Apply constraint based on actual slack and constraint strength
         if (Math.random() < 0.1) {
-            console.log(`DEBUG CONSTRAINT: rode=${currentRodeDeployed.toFixed(1)}m, constraintStart=${constraintStartRode.toFixed(1)}m, constraintEnd=${constraintEndRode.toFixed(1)}m, strength=${constraintStrength.toFixed(2)}, distance=${newDistanceToAnchor.toFixed(3)}m, slack=${chainSlack.toFixed(2)}m`)
+            console.log(`DEBUG CONSTRAINT: rode=${currentRodeDeployed.toFixed(1)}m, constraintStart=${constraintStartRode.toFixed(1)}m, constraintEnd=${constraintEndRode.toFixed(1)}m, strength=${constraintStrength.toFixed(2)}, distance=${newDistanceToAnchor.toFixed(3)}m, slack=${chainSlack.toFixed(2)}m, DISABLED=${DISABLE_SLACK_CONSTRAINT}`)
         }
-        if (constraintStrength > 0.01) {  // Only apply if meaningful (>1%)
+        if (!DISABLE_SLACK_CONSTRAINT && constraintStrength > 0.01) {  // Only apply if meaningful (>1%) AND not disabled
             if (chainSlack <= 0) {
                 // NO SLACK: Apply infinite constraint scaled by strength
                 if (newDistanceToAnchor > 0.1) {

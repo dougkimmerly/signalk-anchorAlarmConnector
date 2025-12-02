@@ -3,7 +3,7 @@ const fs = require('fs').promises
 const path = require('path')
 const axios = require('axios')
 
-const tokenFilePath = path.join(__dirname, 'token.json')
+const tokenFilePath = path.join(__dirname, 'data', 'token.json')
 
 async function loadToken() {
     try {

@@ -1,0 +1,12 @@
+# Test artifacts - generated during test runs
+logs/
+data/
+overnight_tests_*/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Legacy scripts (old/superseded - can be removed once verified unused)
+# legacy/

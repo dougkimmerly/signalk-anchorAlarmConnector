@@ -8,6 +8,56 @@ This is a SignalK plugin that creates an automation bridge between an anchor win
 
 **Repository**: https://github.com/dougkimmerly/signalk-anchorAlarmConnector
 
+## Directory Structure
+
+```
+signalk-anchorAlarmConnector/
+├── CLAUDE.md              # This file - project overview
+├── README.md              # GitHub readme
+├── package.json
+│
+├── plugin/                # SignalK plugin code
+│   ├── index.js           # Main plugin entry point
+│   ├── testSimulation.js  # Physics simulation orchestrator
+│   ├── tokenManager.js    # Authentication management
+│   ├── config/
+│   │   └── simulationConfig.js  # Simulation parameters
+│   ├── physics/           # Physics engine modules
+│   │   ├── boat.js, environment.js, integrator.js
+│   │   └── forces/        # Force calculations (wind, drag, motor, constraint)
+│   └── data/              # Runtime data (config.json, token.json)
+│
+├── test/                  # Test framework
+│   ├── CLAUDE.md          # Test framework documentation (see below)
+│   ├── scripts/           # Main test scripts
+│   ├── phase_tests/       # Development phase tests
+│   ├── unit/              # JavaScript unit tests
+│   ├── analysis/          # Analysis tools and reports
+│   ├── utils/             # Shared Python utilities
+│   └── docs/              # Test documentation
+│
+└── docs/                  # Architecture documentation
+    ├── SIMULATION_ARCHITECTURE.md
+    ├── SIMULATION_DOCUMENTATION.md
+    └── SYSTEM_ARCHITECTURE.md
+```
+
+## Test Framework
+
+For detailed test framework documentation, see **[test/CLAUDE.md](test/CLAUDE.md)**.
+
+Quick commands:
+```bash
+# Run physics unit tests
+node test/unit/physics.test.js
+
+# Run overnight test suite
+cd test/scripts && python3 overnight_test_runner.py
+
+# Quick 4-corner validation
+cd test/scripts && python3 quick_validation_test.py
+```
+
 ## How It Works
 
 ### Automatic Anchor Drop Detection
@@ -22,13 +72,13 @@ When the deployed rode becomes less than depth + bow height while the anchor is 
 2. Resets the anchor state
 3. Updates scope to 0
 
-### Automatic Anchor Setting (After Settling)
-After 2 minutes (120 seconds) of no chain movement with the anchor dropped:
-1. Calculates anchor depth from anchor position altitude
+### Manual Anchor Setting (via Skipper App)
+The anchor alarm is set manually using the Skipper app button, which triggers a PUT to `navigation.anchor.setAnchor`. This:
+1. Reads current anchor depth from position altitude
 2. Sends `setManualAnchor` command with anchor depth and rode length
 3. Sends `setRodeLength` command to update alarm radius
-4. Calculates and publishes anchor scope
-5. Marks anchor as "set"
+
+Note: Automatic 120-second settling was disabled - use the Skipper app button instead.
 
 ## Key Data Paths
 
@@ -53,18 +103,21 @@ This plugin communicates with the [signalk-anchoralarm-plugin](https://github.co
 
 ### Available Commands
 
-All commands are POST requests to `http://[server]:[port]/plugins/anchoralarm/[command]`
+**Anchor Alarm Plugin Commands (POST requests):**
+These are action commands to the anchor alarm plugin at `http://[server]:[port]/plugins/anchoralarm/[command]`
 
-**Commands Used by This Plugin:**
 - `POST /plugins/anchoralarm/dropAnchor` - Marks anchor as dropped at current position
 - `POST /plugins/anchoralarm/raiseAnchor` - Marks anchor as raised, disables alarm
 - `POST /plugins/anchoralarm/setRodeLength` - Sets alarm radius based on rode length
   - Body: `{"length": <meters>}`
 - `POST /plugins/anchoralarm/setManualAnchor` - Manually sets anchor position with depth
   - Body: `{"anchorDepth": <meters>, "rodeLength": <meters>}`
-
-**Other Available Commands:**
 - `POST /plugins/anchoralarm/setRadius` - Calculates radius from current position
+
+**SignalK Standard PUT Handlers:**
+These use SignalK's standard PUT API for setting values:
+
+- `PUT navigation.anchor.setAnchor` - Sets the anchor alarm (called from Skipper app button)
 
 ### Anchor Alarm Plugin Features
 - Default alarm radius: 5× water depth when depth sensor available
@@ -92,8 +145,6 @@ All commands are POST requests to `http://[server]:[port]/plugins/anchoralarm/[c
 - Simulates boat drift, wind gusts, and anchor rode tension
 - Updates position, heading, depth, and wind data
 - FOR TESTING ONLY - Should be disabled in production
-
-**[plugin/TEST_README.md](plugin/TEST_README.md)** - Test simulation documentation
 
 ### Configuration
 

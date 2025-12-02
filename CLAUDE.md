@@ -73,12 +73,12 @@ When the deployed rode becomes less than depth + bow height while the anchor is 
 3. Updates scope to 0
 
 ### Manual Anchor Setting (via Skipper App)
-The anchor alarm is set manually using the Skipper app button, which triggers a PUT to `navigation.anchor.setAnchor`. This:
+The anchor alarm is set manually using the SKipper app button, which triggers a PUT to `navigation.anchor.setAnchor`. This:
 1. Reads current anchor depth from position altitude
 2. Sends `setManualAnchor` command with anchor depth and rode length
 3. Sends `setRodeLength` command to update alarm radius
 
-Note: Automatic 120-second settling was disabled - use the Skipper app button instead.
+Note: Automatic 120-second settling was disabled - use the SKipper app button instead.
 
 ## Key Data Paths
 
@@ -117,7 +117,7 @@ These are action commands to the anchor alarm plugin at `http://[server]:[port]/
 **SignalK Standard PUT Handlers:**
 These use SignalK's standard PUT API for setting values:
 
-- `PUT navigation.anchor.setAnchor` - Sets the anchor alarm (called from Skipper app button)
+- `PUT navigation.anchor.setAnchor` - Sets the anchor alarm (called from SKipper app button)
 
 ### Anchor Alarm Plugin Features
 - Default alarm radius: 5× water depth when depth sensor available

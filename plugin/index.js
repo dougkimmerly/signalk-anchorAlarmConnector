@@ -244,7 +244,7 @@ module.exports = (app) => {
                 testSimulation.registerTestRouterEndpoints(router)
             }
             // Note: setanchor functionality moved to PUT handler at navigation.anchor.setAnchor
-            // This allows Skipper app and other SignalK clients to use standard PUT API
+            // This allows SKipper app and other SignalK clients to use standard PUT API
         },
 
         stop: () => {
@@ -494,7 +494,7 @@ module.exports = (app) => {
      */
     function registerSetAnchorPutHandler() {
         // PUT handler for setAnchor - sets anchor alarm using current position and rode
-        // This is the SignalK-standard path accessible from Skipper app and other clients
+        // This is the SignalK-standard path accessible from SKipper app and other clients
         // PUT to navigation.anchor.setAnchor with value: true to set the anchor alarm
         // The setAnchor value is automatically maintained by watching navigation.anchor.maxRadius:
         //   - When maxRadius becomes a valid number, setAnchor publishes as true

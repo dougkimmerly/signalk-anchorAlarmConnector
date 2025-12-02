@@ -10,7 +10,7 @@ This SignalK plugin seamlessly integrates a chain counter with the anchor alarm 
   When `navigation.anchor.rodeDeployed` exceeds `environment.depth.belowSurface` plus `design.bowAnchorHeight`, the plugin sends a request to the anchor alarm plugin to **mark the anchor position** and **activate the alarm**.
 
 - **Setting the Anchor Alarm:**
-  Use the Skipper app button to manually set the anchor alarm. This triggers a PUT to `navigation.anchor.setAnchor` which reads the current anchor depth and rode length, then configures the alarm radius.
+  Use the SKipper app button to manually set the anchor alarm. This triggers a PUT to `navigation.anchor.setAnchor` which reads the current anchor depth and rode length, then configures the alarm radius.
 
 - **Raising the Chain:**
   When `navigation.anchor.rodeDeployed` becomes less than `environment.depth.belowSurface` plus `design.bowAnchorHeight`, it sends a request to **mark the anchor as raised** and **deactivate the alarm**.
@@ -47,7 +47,7 @@ This SignalK plugin seamlessly integrates a chain counter with the anchor alarm 
 ## Features
 
 - Automates alarm activation/deactivation during chain lowering/raising
-- Manual anchor setting via Skipper app (PUT to `navigation.anchor.setAnchor`)
+- Manual anchor setting via SKipper app (PUT to `navigation.anchor.setAnchor`)
 - Real-time scope calculation
 - Auto-clear alarms when boat returns to safe zone
 - Physics-based test simulation for development

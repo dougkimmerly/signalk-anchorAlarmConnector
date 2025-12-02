@@ -107,17 +107,18 @@ signalk-anchorAlarmConnector/
 │
 ├── plugin/                # SignalK plugin code
 │   ├── index.js           # Main plugin entry point
-│   ├── testSimulation.js  # Physics simulation orchestrator
+│   ├── testingSimulator.js # Physics simulation orchestrator
 │   ├── tokenManager.js    # Authentication management
 │   ├── config/            # Simulation configuration
 │   ├── physics/           # Physics engine modules
 │   └── data/              # Runtime data (config, tokens)
 │
-├── test/                  # Test framework
-│   ├── CLAUDE.md          # Test framework documentation
-│   ├── scripts/           # Main test scripts
+├── validation/            # Validation framework
+│   ├── CLAUDE.md          # Validation framework documentation
+│   ├── scripts/           # Main validation scripts
 │   ├── phase_tests/       # Development phase tests
 │   ├── unit/              # JavaScript unit tests
+│   ├── data/              # Test results and data files
 │   └── analysis/          # Analysis tools
 │
 └── docs/                  # Architecture documentation
@@ -130,7 +131,7 @@ signalk-anchorAlarmConnector/
 ### Running Unit Tests
 
 ```bash
-node test/unit/physics.test.js
+node validation/unit/physics.test.js
 ```
 
 ### Test Simulation Mode
@@ -140,7 +141,7 @@ Enable test mode in the plugin configuration to run physics-based anchor simulat
 - Anchor rode tension
 - Realistic position and heading updates
 
-See [test/CLAUDE.md](test/CLAUDE.md) for detailed test framework documentation.
+See [validation/CLAUDE.md](validation/CLAUDE.md) for detailed validation framework documentation.
 
 ---
 

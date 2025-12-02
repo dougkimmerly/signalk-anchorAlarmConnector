@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Overnight Test Orchestrator for AutoDrop and AutoRetrieve
-Autonomous test runner - executes all 72 tests with full data collection and analysis
+Autonomous test runner - executes all 56 tests with full data collection and analysis
 Run once and walk away - handles all phases automatically
 """
 
@@ -29,7 +29,7 @@ SAMPLE_INTERVAL = 0.5  # 500ms sampling
 MAX_RETRIES = 2
 
 # Test matrix
-WIND_SPEEDS = [4, 8, 12, 18, 20, 25]  # knots
+WIND_SPEEDS = [1, 4, 8, 12, 18, 20, 25]  # knots (1kn tests motor functions)
 DEPTHS = [3, 5, 8, 12]  # meters (max 12m to stay within 80m chain @ 5:1 scope)
 TEST_TYPES = ['autoDrop', 'autoRetrieve']
 
@@ -81,6 +81,66 @@ def update_progress(test_num, wind, depth, test_type, status):
         f.write(f'Completed: {tests_completed}\n')
         f.write(f'Passed: {tests_passed}\n')
         f.write(f'Failed: {tests_failed}\n')
+
+    # Also publish to SignalK
+    publish_test_progress(test_num, wind, depth, test_type, status)
+
+def publish_test_progress(test_num, wind, depth, test_type, status):
+    """Publish test progress to SignalK for monitoring"""
+    try:
+        token = get_auth_token()
+        if not token:
+            return
+
+        # Build progress data
+        progress_data = {
+            "testNumber": test_num,
+            "totalTests": total_tests,
+            "currentTest": f"{test_type} @ {wind}kn, {depth}m",
+            "testType": test_type,
+            "windSpeed": wind,
+            "depth": depth,
+            "status": status,
+            "completed": tests_completed,
+            "passed": tests_passed,
+            "failed": tests_failed,
+            "percentComplete": round(tests_completed / total_tests * 100, 1) if total_tests > 0 else 0,
+            "timestamp": datetime.now().isoformat() + 'Z'
+        }
+
+        # Publish via SignalK delta
+        url = f"{BASE_URL}/signalk/v1/api/vessels/self"
+
+        # Use handleMessage style - send as delta to a custom path
+        delta = {
+            "updates": [{
+                "timestamp": datetime.now().isoformat() + 'Z',
+                "values": [
+                    {"path": "test.overnight.progress.testNumber", "value": test_num},
+                    {"path": "test.overnight.progress.totalTests", "value": total_tests},
+                    {"path": "test.overnight.progress.currentTest", "value": f"{test_type} @ {wind}kn, {depth}m"},
+                    {"path": "test.overnight.progress.status", "value": status},
+                    {"path": "test.overnight.progress.completed", "value": tests_completed},
+                    {"path": "test.overnight.progress.passed", "value": tests_passed},
+                    {"path": "test.overnight.progress.failed", "value": tests_failed},
+                    {"path": "test.overnight.progress.percentComplete", "value": round(tests_completed / total_tests * 100, 1) if total_tests > 0 else 0}
+                ]
+            }]
+        }
+
+        # Post delta to SignalK
+        delta_url = f"{BASE_URL}/signalk/v1/api/delta"
+        data = json.dumps(delta).encode('utf-8')
+        req = urllib.request.Request(delta_url, data=data, method='POST')
+        req.add_header('Content-Type', 'application/json')
+        req.add_header('Authorization', f'Bearer {token}')
+
+        with urllib.request.urlopen(req, timeout=5) as response:
+            pass  # Success
+
+    except Exception as e:
+        # Don't fail tests if SignalK publish fails
+        pass
 
 def get_auth_token():
     """Get authentication token"""
@@ -544,6 +604,36 @@ def run_all_tests():
     print(f'  Results: {tests_passed}/{total_tests} passed')
     print(f'  See: {TEST_LOG}')
 
+def publish_session_status(status, message=""):
+    """Publish session status to SignalK"""
+    try:
+        token = get_auth_token()
+        if not token:
+            return
+
+        delta = {
+            "updates": [{
+                "timestamp": datetime.now().isoformat() + 'Z',
+                "values": [
+                    {"path": "test.overnight.session.status", "value": status},
+                    {"path": "test.overnight.session.message", "value": message},
+                    {"path": "test.overnight.session.totalTests", "value": total_tests},
+                    {"path": "test.overnight.session.startTime", "value": datetime.now().isoformat() + 'Z' if status == "STARTED" else ""},
+                ]
+            }]
+        }
+
+        delta_url = f"{BASE_URL}/signalk/v1/api/delta"
+        data = json.dumps(delta).encode('utf-8')
+        req = urllib.request.Request(delta_url, data=data, method='POST')
+        req.add_header('Content-Type', 'application/json')
+        req.add_header('Authorization', f'Bearer {token}')
+
+        with urllib.request.urlopen(req, timeout=5) as response:
+            pass
+    except:
+        pass
+
 if __name__ == '__main__':
     setup_session()
     print(f'Starting overnight test session...')
@@ -552,12 +642,18 @@ if __name__ == '__main__':
     print(f'Session directory: {SESSION_DIR}')
     print()
 
+    # Publish session start to SignalK
+    publish_session_status("STARTED", f"Running {total_tests} tests")
+
     try:
         run_all_tests()
+        publish_session_status("COMPLETED", f"Passed: {tests_passed}/{total_tests}")
     except KeyboardInterrupt:
         log_test(f'\n! Session interrupted by user at test {tests_completed}/{total_tests}')
+        publish_session_status("INTERRUPTED", f"Stopped at test {tests_completed}/{total_tests}")
         print(f'\nSession interrupted. Progress saved.')
     except Exception as e:
         log_test(f'\n! FATAL ERROR: {e}')
+        publish_session_status("ERROR", str(e))
         print(f'Fatal error: {e}')
         sys.exit(1)

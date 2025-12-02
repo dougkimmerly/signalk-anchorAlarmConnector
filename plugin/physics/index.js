@@ -7,6 +7,7 @@
 const { createBoat } = require('./boat')
 const { createEnvironment } = require('./environment')
 const { createIntegrator } = require('./integrator')
+const { createTideSimulator, DEFAULT_TIDES_CONFIG } = require('./tides')
 
 // Force modules
 const windForce = require('./forces/wind')
@@ -22,6 +23,7 @@ module.exports = {
   createBoat,
   createEnvironment,
   createIntegrator,
+  createTideSimulator,
 
   // Force modules (for direct access if needed)
   forces: {
@@ -33,6 +35,12 @@ module.exports = {
 
   // Motor control (direct access for endpoints)
   motor: motorForce,
+
+  // Tides
+  tides: {
+    createTideSimulator,
+    DEFAULT_TIDES_CONFIG,
+  },
 
   // Config access
   config: simulationConfig,

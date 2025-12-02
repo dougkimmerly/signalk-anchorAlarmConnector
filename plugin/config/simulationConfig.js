@@ -153,8 +153,18 @@ const config = {
 
   // Test environment
   environment: {
-    depth: 3.0,                // meters
+    depth: 3.0,                // meters (base depth without tide)
     bowHeight: 2.0,            // meters above waterline (for scope calculation)
+  },
+
+  // Tide simulation (Marsh Harbor, Bahamas)
+  tides: {
+    enabled: true,             // Enable tide simulation
+    location: 'Marsh Harbor',  // Reference location
+    M2_PERIOD: 44712,          // seconds (12.42 hours - M2 lunar semi-diurnal)
+    MEAN_HEIGHT: 0.52,         // meters - average tide height
+    AMPLITUDE: 0.36,           // meters - tide swing (high=0.88m, low=0.16m)
+    epochOffset: 0             // seconds - phase offset for syncing with real tides
   }
 }
 

@@ -42,6 +42,6 @@ coverage/     # for test coverage reports
 *.tmp
 *.temp
 
-# Test data and results (temporary, not committed to repo)
-test/data/
-test/autodrop_*.json
+# Validation data and results (temporary, not committed to repo)
+validation/data/
+validation/autodrop_*.json

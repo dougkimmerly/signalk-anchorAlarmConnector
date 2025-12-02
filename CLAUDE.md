@@ -18,7 +18,7 @@ signalk-anchorAlarmConnector/
 │
 ├── plugin/                # SignalK plugin code
 │   ├── index.js           # Main plugin entry point
-│   ├── testSimulation.js  # Physics simulation orchestrator
+│   ├── testingSimulator.js # Physics simulation orchestrator
 │   ├── tokenManager.js    # Authentication management
 │   ├── config/
 │   │   └── simulationConfig.js  # Simulation parameters
@@ -27,24 +27,25 @@ signalk-anchorAlarmConnector/
 │   │   └── forces/        # Force calculations (wind, drag, motor, constraint)
 │   └── data/              # Runtime data (config.json, token.json)
 │
-├── test/                  # Test framework
-│   ├── CLAUDE.md          # Test framework documentation (see below)
-│   ├── scripts/           # Main test scripts
-│   ├── phase_tests/       # Development phase tests
+├── validation/            # Validation framework
+│   ├── CLAUDE.md          # Validation framework documentation (see below)
+│   ├── scripts/           # Main validation scripts
+│   ├── data/              # Test results and temporary data
 │   ├── unit/              # JavaScript unit tests
 │   ├── analysis/          # Analysis tools and reports
 │   ├── utils/             # Shared Python utilities
-│   └── docs/              # Test documentation
+│   └── docs/              # Validation documentation
 │
 └── docs/                  # Architecture documentation
+    ├── SIGNALK_GUIDE.md           # Quick reference for SignalK concepts and paths
     ├── SIMULATION_ARCHITECTURE.md
     ├── SIMULATION_DOCUMENTATION.md
     └── SYSTEM_ARCHITECTURE.md
 ```
 
-## Test Framework
+## Validation Framework
 
-For detailed test framework documentation, see **[test/CLAUDE.md](test/CLAUDE.md)**.
+For detailed validation framework documentation, see **[validation/CLAUDE.md](validation/CLAUDE.md)**.
 
 Quick commands:
 ```bash

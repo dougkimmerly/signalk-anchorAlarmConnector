@@ -601,6 +601,114 @@ test('Motor integrates with physics loop', () => {
 })
 
 // ============================================
+// TEST 10: Tide Simulation
+// ============================================
+console.log('\n--- Tide Simulation Tests ---')
+
+test('Tide height within expected range', () => {
+  const { createTideSimulator } = require('../../plugin/physics/tides')
+  const tides = createTideSimulator()
+
+  // Sample at multiple points
+  const t0 = Date.now() / 1000
+  for (let i = 0; i < 10; i++) {
+    const height = tides.calculateHeight(t0 + i * 4471)  // Sample every ~1.24 hours
+    assertTrue(height >= 0.16, `Height ${height}m should be >= 0.16m (low tide)`)
+    assertTrue(height <= 0.88, `Height ${height}m should be <= 0.88m (high tide)`)
+  }
+})
+
+test('Tide completes full cycle in ~12.42 hours', () => {
+  const { createTideSimulator } = require('../../plugin/physics/tides')
+  const tides = createTideSimulator()
+
+  const t0 = Date.now() / 1000
+  const h0 = tides.calculateHeight(t0)
+  const h1 = tides.calculateHeight(t0 + 44712)  // One full period
+
+  // Heights should be nearly identical after one full period
+  assertApprox(h1, h0, 0.01, 'Height should repeat after one period')
+})
+
+test('Tide reaches max/min at expected phases', () => {
+  const { createTideSimulator } = require('../../plugin/physics/tides')
+  const tides = createTideSimulator()
+
+  const t0 = Date.now() / 1000
+
+  // At phase 0.25 (1/4 period), should be at high tide
+  const highTime = t0 + 44712 * 0.25
+  const highHeight = tides.calculateHeight(highTime)
+  assertApprox(highHeight, 0.88, 0.01, 'High tide height')
+
+  // At phase 0.75 (3/4 period), should be at low tide
+  const lowTime = t0 + 44712 * 0.75
+  const lowHeight = tides.calculateHeight(lowTime)
+  assertApprox(lowHeight, 0.16, 0.01, 'Low tide height')
+})
+
+test('Next high tide prediction is in future', () => {
+  const { createTideSimulator } = require('../../plugin/physics/tides')
+  const tides = createTideSimulator()
+
+  const now = Date.now() / 1000
+  const nextHigh = tides.getNextHighTide(now)
+
+  const nextHighTime = new Date(nextHigh.time).getTime() / 1000
+  assertTrue(nextHighTime > now, `Next high tide should be in future: ${nextHigh.time}`)
+  assertTrue(nextHighTime - now <= 44712, `Next high tide should be within one period`)
+  assertApprox(nextHigh.height, 0.88, 0.01, 'High tide height should be 0.88m')
+})
+
+test('Next low tide prediction is in future', () => {
+  const { createTideSimulator } = require('../../plugin/physics/tides')
+  const tides = createTideSimulator()
+
+  const now = Date.now() / 1000
+  const nextLow = tides.getNextLowTide(now)
+
+  const nextLowTime = new Date(nextLow.time).getTime() / 1000
+  assertTrue(nextLowTime > now, `Next low tide should be in future: ${nextLow.time}`)
+  assertTrue(nextLowTime - now <= 44712, `Next low tide should be within one period`)
+  assertApprox(nextLow.height, 0.16, 0.01, 'Low tide height should be 0.16m')
+})
+
+test('Tide state includes all required SignalK paths', () => {
+  const { createTideSimulator } = require('../../plugin/physics/tides')
+  const tides = createTideSimulator()
+
+  const state = tides.getTideState()
+
+  assertTrue(typeof state.heightNow === 'number', 'heightNow should be a number')
+  assertTrue(typeof state.heightHigh === 'number', 'heightHigh should be a number')
+  assertTrue(typeof state.heightLow === 'number', 'heightLow should be a number')
+  assertTrue(typeof state.timeHigh === 'string', 'timeHigh should be ISO string')
+  assertTrue(typeof state.timeLow === 'string', 'timeLow should be ISO string')
+})
+
+test('Environment depth is raw (not adjusted for tide)', () => {
+  // Temporarily enable tides
+  const originalEnabled = config.config.tides?.enabled
+  config.config.tides = config.config.tides || {}
+  config.config.tides.enabled = true
+
+  const env = createEnvironment({ depth: 5 })  // 5m base depth
+
+  const state = env.getState()
+
+  // Depth should be raw base depth - NOT adjusted for tide
+  assertApprox(state.depth, 5, 0.01, 'Depth should be raw base depth (5m)')
+  assertTrue(typeof state.tideHeight === 'number', 'tideHeight should be included in state')
+  assertTrue(state.tideHeight >= 0.16 && state.tideHeight <= 0.88,
+    `tideHeight ${state.tideHeight}m should be within tide range`)
+
+  // Restore original setting
+  if (originalEnabled !== undefined) {
+    config.config.tides.enabled = originalEnabled
+  }
+})
+
+// ============================================
 // SUMMARY
 // ============================================
 console.log('\n===========================================')

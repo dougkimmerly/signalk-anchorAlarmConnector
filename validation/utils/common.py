@@ -26,12 +26,55 @@ BOW_HEIGHT = 2.0  # meters
 # Authentication
 # =============================================================================
 
+def get_device_token():
+    """Load device token from plugin's token file.
+
+    The plugin stores a device token in plugin/data/token.json after approval.
+    This token can be permanent and is more reliable than user login tokens.
+
+    Returns:
+        str: Device token if available, None otherwise
+    """
+    try:
+        token_path = Path(__file__).parent.parent.parent / 'plugin' / 'data' / 'token.json'
+
+        with open(token_path, 'r') as f:
+            data = json.load(f)
+            token = data.get('token')
+            expiration = data.get('expiration')
+
+            # Check if token exists
+            if not token:
+                return None
+
+            # Check if token is expired (if expiration is set)
+            if expiration is not None:
+                current_time_ms = time.time() * 1000
+                if current_time_ms > expiration:
+                    print("Device token expired - please approve plugin again in SignalK admin")
+                    return None
+
+            return token
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        return None
+
+
 def get_auth_token():
     """Get authentication token from SignalK server.
+
+    Tries device token first (preferred), falls back to user login if unavailable.
 
     Returns:
         str: JWT token if successful, None otherwise
     """
+    # Try device token first (more reliable, can be permanent)
+    token = get_device_token()
+    if token:
+        return token
+
+    # Fallback to user login if device token not available
     try:
         url = f"{BASE_URL}/signalk/v1/auth/login"
         data = json.dumps({"username": "admin", "password": "signalk"}).encode('utf-8')

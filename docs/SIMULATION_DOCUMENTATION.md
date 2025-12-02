@@ -430,6 +430,7 @@ If actual << expected, constraint is active or damping is present.
 
 ## References
 
+-   **SignalK Guide**: `docs/SIGNALK_GUIDE.md` - Quick reference for SignalK concepts, data models, APIs, and unit conversions used throughout this project
 -   **SignalK Anchor Data**: `navigation.anchor.*` paths
 -   **Physics Model**: Newtonian mechanics with quadratic drag
 -   **Catenary Formula**: `maxSwingRadius = sqrt(rode² - depth²)`

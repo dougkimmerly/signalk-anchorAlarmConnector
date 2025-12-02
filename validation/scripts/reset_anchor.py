@@ -9,27 +9,11 @@ import time
 import urllib.request
 import urllib.error
 import sys
+from pathlib import Path
 
-def get_auth_token():
-    """Get authentication token from SignalK server"""
-    try:
-        url = "http://localhost:80/signalk/v1/auth/login"
-        credentials = {"username": "admin", "password": "signalk"}
-        data = json.dumps(credentials).encode('utf-8')
-        req = urllib.request.Request(url, data=data, method='POST')
-        req.add_header('Content-Type', 'application/json')
-
-        with urllib.request.urlopen(req, timeout=2) as response:
-            result = json.loads(response.read())
-            token = result.get('token')
-            if token:
-                return token
-            else:
-                print("Error: No token in response")
-                return None
-    except Exception as e:
-        print(f"Error authenticating: {e}")
-        return None
+# Add test/utils to path so we can import common
+sys.path.insert(0, str(Path(__file__).parent.parent / 'utils'))
+from common import get_auth_token
 
 def get_rode_deployed(token):
     """Get current rode deployed value"""

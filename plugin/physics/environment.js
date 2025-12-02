@@ -1,7 +1,7 @@
 /**
  * Environment Module
  *
- * Manages environmental conditions: wind, depth, etc.
+ * Manages environmental conditions: wind, depth, tides, etc.
  * Single source of truth for all environmental variables.
  *
  * The simulator CREATES and CONTROLS these values.
@@ -9,6 +9,7 @@
  */
 
 const { config, updateConfig } = require('../config/simulationConfig')
+const { createTideSimulator } = require('./tides')
 
 /**
  * Create an environment state manager
@@ -17,13 +18,16 @@ const { config, updateConfig } = require('../config/simulationConfig')
  * @returns {object} - Environment state object with methods
  */
 function createEnvironment(initialState = {}) {
+  // Create tide simulator
+  const tideSimulator = createTideSimulator()
+
   const state = {
     // Wind
     windSpeed: initialState.windSpeed ?? config.wind.initialSpeed,
     windDirection: initialState.windDirection ?? config.wind.initialDirection,
 
-    // Water
-    depth: initialState.depth ?? config.environment.depth,
+    // Water - base depth without tide
+    baseDepth: initialState.depth ?? config.environment.depth,
 
     // Timing for wind variation
     lastGustTime: Date.now(),
@@ -42,10 +46,14 @@ function createEnvironment(initialState = {}) {
      * Get current environment state
      */
     getState() {
+      const tidesEnabled = config.tides?.enabled !== false
+      const tideHeight = tidesEnabled ? tideSimulator.calculateHeight() : 0
+
       return {
         windSpeed: state.windSpeed,
         windDirection: state.windDirection,
-        depth: state.depth,
+        depth: state.baseDepth,  // Raw depth - NOT adjusted for tide
+        tideHeight: tideHeight,
       }
     },
 
@@ -64,10 +72,32 @@ function createEnvironment(initialState = {}) {
     },
 
     /**
-     * Get water depth in meters
+     * Get water depth in meters (raw measurement, NOT adjusted for tide)
      */
     getDepth() {
-      return state.depth
+      return state.baseDepth
+    },
+
+    /**
+     * Get current tide height
+     */
+    getTideHeight() {
+      const tidesEnabled = config.tides?.enabled !== false
+      return tidesEnabled ? tideSimulator.calculateHeight() : 0
+    },
+
+    /**
+     * Get complete tide state for SignalK publishing
+     */
+    getTideState() {
+      return tideSimulator.getTideState()
+    },
+
+    /**
+     * Get tide simulator for direct access
+     */
+    getTideSimulator() {
+      return tideSimulator
     },
 
     /**
@@ -89,12 +119,12 @@ function createEnvironment(initialState = {}) {
     },
 
     /**
-     * Set water depth
+     * Set base water depth (without tide)
      *
-     * @param {number} depth - Depth in meters
+     * @param {number} depth - Base depth in meters
      */
     setDepth(depth) {
-      state.depth = Math.max(0, depth)
+      state.baseDepth = Math.max(0, depth)
     },
 
     /**
@@ -172,7 +202,7 @@ function createEnvironment(initialState = {}) {
     reset() {
       state.windSpeed = config.wind.initialSpeed
       state.windDirection = config.wind.initialDirection
-      state.depth = config.environment.depth
+      state.baseDepth = config.environment.depth
       state.lastGustTime = Date.now()
       state.lastShiftTime = Date.now()
       state.lastUpdateTime = Date.now()
@@ -180,6 +210,7 @@ function createEnvironment(initialState = {}) {
       state.gustCurrent = 0
       state.directionOscillation = 0
       state.oscillationPhase = 0
+      tideSimulator.reset()
     },
 
     /**
@@ -202,7 +233,9 @@ function createEnvironment(initialState = {}) {
      * @returns {Array} - Array of SignalK path/value pairs
      */
     getSignalKUpdates() {
-      return [
+      const tidesEnabled = config.tides?.enabled !== false
+
+      const updates = [
         {
           path: 'environment.wind.speedTrue',
           value: state.windSpeed * 0.51444  // Convert knots to m/s
@@ -213,9 +246,23 @@ function createEnvironment(initialState = {}) {
         },
         {
           path: 'environment.depth.belowSurface',
-          value: state.depth
+          value: state.baseDepth  // Raw depth - NOT adjusted for tide
         }
       ]
+
+      // Add tide data if enabled
+      if (tidesEnabled) {
+        const tideState = tideSimulator.getTideState()
+        updates.push(
+          { path: 'environment.tide.heightNow', value: tideState.heightNow },
+          { path: 'environment.tide.heightHigh', value: tideState.heightHigh },
+          { path: 'environment.tide.timeHigh', value: tideState.timeHigh },
+          { path: 'environment.tide.heightLow', value: tideState.heightLow },
+          { path: 'environment.tide.timeLow', value: tideState.timeLow }
+        )
+      }
+
+      return updates
     }
   }
 }

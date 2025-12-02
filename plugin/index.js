@@ -21,6 +21,8 @@ let lastDepth = 0
 let lastCounterConnection = 0
 let activeUpdates = 1000
 let lastDropCommandTime = 0
+let tideAtDrop = null      // Tide height when anchor was dropped
+let currentTide = 0        // Current tide height
 
 // Auto-clear alarm variables
 let alarmClearInterval = null
@@ -115,6 +117,10 @@ module.exports = (app) => {
                             path: 'navigation.anchor.maxRadius',
                             period: 1000,
                         },
+                        {
+                            path: 'environment.tide.heightNow',
+                            period: 60000,  // Tide changes slowly
+                        },
                     ],
                 },
                 unsubscribes,
@@ -150,6 +156,10 @@ module.exports = (app) => {
                                 ) {
                                     sendAnchorCommand('dropAnchor')
                                     lastDropCommandTime = Date.now()
+                                    // Record tide height at anchor drop
+                                    tideAtDrop = currentTide
+                                    sendChange('navigation.anchor.tideAtDrop', tideAtDrop)
+                                    console.log(`[Anchor Drop] Tide at drop: ${tideAtDrop}m`)
                                 }
                                 if (
                                     newRode < previousRode &&
@@ -158,16 +168,26 @@ module.exports = (app) => {
                                 ) {
                                     sendAnchorCommand('raiseAnchor')
                                     sendChange('navigation.anchor.scope', 0)
+                                    // Clear tide at drop when anchor raised
+                                    tideAtDrop = null
+                                    sendChange('navigation.anchor.tideAtDrop', null)
+                                    console.log('[Anchor Raise] Cleared tideAtDrop')
                                 }
                                 rodeDeployed = newRode
 
                                 // Calculate and publish scope when we have valid anchor position
                                 const anchorPos = app.getSelfPath('navigation.anchor.position')
                                 if (anchorPos?.value?.altitude !== undefined && rodeDeployed > 0) {
-                                    const anchorDepthVal = Math.abs(anchorPos.value.altitude)
-                                    // Scope = rode length / (depth + bow height)
+                                    const anchorDepthAtDrop = Math.abs(anchorPos.value.altitude)
+                                    // Effective anchor depth adjusts for tide change since drop
+                                    // effectiveDepth = depthAtDrop - tideAtDrop + currentTide
+                                    let effectiveAnchorDepth = anchorDepthAtDrop
+                                    if (tideAtDrop !== null) {
+                                        effectiveAnchorDepth = anchorDepthAtDrop - tideAtDrop + currentTide
+                                    }
+                                    // Scope = rode length / (effective depth + bow height)
                                     // bowHeight accounts for height of bow roller above water
-                                    const scope = rodeDeployed / (anchorDepthVal + bowHeight)
+                                    const scope = rodeDeployed / (effectiveAnchorDepth + bowHeight)
                                     if (isValidNumber(scope) && scope > 0) {
                                         sendChange('navigation.anchor.scope', scope)
                                     }
@@ -177,8 +197,13 @@ module.exports = (app) => {
 
                                 // Calculate and publish scope when anchor position changes
                                 if (value?.altitude !== undefined && rodeDeployed > 0) {
-                                    const anchorDepthVal = Math.abs(value.altitude)
-                                    const scope = rodeDeployed / (anchorDepthVal + bowHeight)
+                                    const anchorDepthAtDrop = Math.abs(value.altitude)
+                                    // Effective anchor depth adjusts for tide change since drop
+                                    let effectiveAnchorDepth = anchorDepthAtDrop
+                                    if (tideAtDrop !== null) {
+                                        effectiveAnchorDepth = anchorDepthAtDrop - tideAtDrop + currentTide
+                                    }
+                                    const scope = rodeDeployed / (effectiveAnchorDepth + bowHeight)
                                     if (isValidNumber(scope) && scope > 0) {
                                         sendChange('navigation.anchor.scope', scope)
                                     }
@@ -209,6 +234,9 @@ module.exports = (app) => {
                                 const isAnchorSet = value !== null && value !== undefined && !isNaN(value) && value > 0
                                 sendChange('navigation.anchor.setAnchor', isAnchorSet)
                                 console.log(`[maxRadius] ${value} -> setAnchor: ${isAnchorSet}`)
+                            } else if (path === 'environment.tide.heightNow') {
+                                // Track current tide height
+                                currentTide = value || 0
                             }
 
                             if (

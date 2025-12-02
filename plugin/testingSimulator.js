@@ -339,11 +339,21 @@ function publishState(state) {
   // Heading
   sendChangeCallback('navigation.headingTrue', state.heading * Math.PI / 180)
 
-  // Environment (wind, depth)
+  // Environment (wind, depth, tides)
   const envState = environment.getState()
   sendChangeCallback('environment.wind.speedTrue', envState.windSpeed * 0.51444)
   sendChangeCallback('environment.wind.directionTrue', envState.windDirection * Math.PI / 180)
   sendChangeCallback('environment.depth.belowSurface', envState.depth)
+
+  // Publish tide data (if enabled)
+  const tideState = environment.getTideState()
+  if (tideState) {
+    sendChangeCallback('environment.tide.heightNow', tideState.heightNow)
+    sendChangeCallback('environment.tide.heightHigh', tideState.heightHigh)
+    sendChangeCallback('environment.tide.timeHigh', tideState.timeHigh)
+    sendChangeCallback('environment.tide.heightLow', tideState.heightLow)
+    sendChangeCallback('environment.tide.timeLow', tideState.timeLow)
+  }
 
   // Motor state - publish separate paths for SKipper app PUT control
   const motorState = getMotorState()

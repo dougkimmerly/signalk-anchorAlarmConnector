@@ -141,11 +141,11 @@ calculate_bearing(lat1, lon1, lat2, lon2)   # Bearing between points
 ## Test Matrix
 
 The overnight test runner executes tests across:
-- **Wind speeds**: 4, 8, 12, 18, 20, 25 knots
+- **Wind speeds**: 1, 4, 8, 12, 18, 20, 25 knots (1kn tests motor functions)
 - **Depths**: 3, 5, 8, 12 meters (max 12m for 80m chain @ 5:1 scope)
 - **Test types**: autoDrop, autoRetrieve
 
-Total: 48 tests (6 x 4 x 2)
+Total: 56 tests (7 x 4 x 2)
 
 ## Quick Commands
 

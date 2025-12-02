@@ -41,3 +41,7 @@ coverage/     # for test coverage reports
 # Temporary files
 *.tmp
 *.temp
+
+# Test data and results (temporary, not committed to repo)
+test/data/
+test/autodrop_*.json

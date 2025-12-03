@@ -284,8 +284,11 @@ def get_simulation_state(token):
         req.add_header('Authorization', f'Bearer {token}')
         with urllib.request.urlopen(req, timeout=5) as response:
             return json.loads(response.read())
-    except:
-        return None
+    except Exception as e:
+        # Log endpoint failures for debugging
+        # Return empty dict instead of None so data collection continues
+        # (sim_state is optional for test success)
+        return {}
 
 def reset_simulation():
     """Reset simulation to initial state (after config change)"""
@@ -360,7 +363,8 @@ def collect_sample(token, start_pos, start_lat, start_lon, start_time):
         heading = get_heading(token)
         sim_state = get_simulation_state(token)
 
-        if not (pos and speed is not None and heading):
+        # Position, speed, and heading are required for a valid sample
+        if not (pos and speed is not None and heading is not None):
             return None
 
         elapsed = time.time() - start_time
@@ -380,12 +384,13 @@ def collect_sample(token, start_pos, start_lat, start_lon, start_time):
             'distance_from_start': lat_delta
         }
 
-        # Add simulation state if available
-        if sim_state:
+        # Add simulation state if available (non-empty dict)
+        if sim_state and len(sim_state) > 0:
             sample['simulation_state'] = sim_state
 
         return sample
-    except:
+    except Exception as e:
+        # Log error but don't fail - continue sampling
         return None
 
 def run_test(test_num, wind_speed, depth, test_type):
@@ -463,6 +468,8 @@ def run_test(test_num, wind_speed, depth, test_type):
     test_start = time.time()
     next_sample_time = test_start + SAMPLE_INTERVAL
     max_duration = TEST_TIMEOUT if test_type == 'autoDrop' else TEST_TIMEOUT
+    failed_samples = 0
+    max_failed_samples = 20  # Abort if 20 consecutive samples fail
 
     try:
         while time.time() - test_start < max_duration:
@@ -471,22 +478,29 @@ def run_test(test_num, wind_speed, depth, test_type):
                 sample = collect_sample(token, start_pos, start_lat, start_lon, test_start)
                 if sample:
                     samples.append(sample)
+                    failed_samples = 0  # Reset failed counter on successful sample
+                else:
+                    failed_samples += 1
+                    # Abort if data collection is consistently failing
+                    if failed_samples >= max_failed_samples:
+                        log_test(f'! Aborting: {failed_samples} consecutive failed samples')
+                        break
                 next_sample_time = now + SAMPLE_INTERVAL
 
             time.sleep(0.1)
 
-            # Check termination conditions
+            # Check termination conditions only if we have samples
             if len(samples) > 0:
                 latest = samples[-1]
                 if test_type == 'autoDrop':
-                    # Check if target scope reached
+                    # Check if target scope reached (from simulation state)
                     sim_state = latest.get('simulation_state', {})
                     scope = sim_state.get('scopeRatio', 0)
                     if scope >= 5.0:
                         log_test(f'✓ Target scope reached: {scope:.1f}:1')
                         break
                 elif test_type == 'autoRetrieve':
-                    # Check if rode retrieved
+                    # Check if rode retrieved (from simulation state)
                     sim_state = latest.get('simulation_state', {})
                     rode = sim_state.get('rodeDeployed', 0)
                     if rode <= 0.1:

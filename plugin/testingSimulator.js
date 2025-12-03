@@ -222,22 +222,40 @@ function readExternalState() {
     // Ignore read errors
   }
 
+  // Read command state (from chain controller or test)
+  // This provides better indication of deployment intent than chainDirection
+  // 'autoDrop' = deploying, 'autoRetrieve' = retrieving, 'idle' = stopped
+  // CRITICAL: This should be continuously updated while deploying, not event-based
+  try {
+    const commandPath = 'navigation.anchor.command'
+    const commandValue = app.getSelfPath(commandPath)
+    if (commandValue !== undefined && commandValue !== null) {
+      state.command = typeof commandValue === 'object' ? commandValue.value : commandValue
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+
   return state
 }
 
 /**
- * Automatic motor control based on chain direction and boat speed
+ * Automatic motor control based on command state and boat speed
  *
- * DEPLOYMENT (chainDirection='down'):
+ * DEPLOYMENT (command='autoDrop' or chainDirection='down'):
  * - If boat speed is too slow, engage motorBackward to help move away from anchor
  * - Target speed ~0.5 m/s (~1kn) to allow chain to pay out
+ * - Uses command state (primary) with chainDirection fallback for compatibility
  *
- * RETRIEVAL (chainDirection='up'):
+ * RETRIEVAL (command='autoRetrieve' or chainDirection='up'):
  * - Engage motorForward to create slack for chain lifting
  * - Need slack in chain so windlass can lift it
  *
- * IDLE (no chain movement):
+ * IDLE (no command or chainDirection):
  * - Stop motor to save energy
+ *
+ * CRITICAL: Command state must be continuously published while deploying/retrieving
+ * to prevent motor from cycling on/off due to transient signal loss.
  */
 function updateAutoMotor(boatState, externalState) {
   const cfg = getConfig()
@@ -252,7 +270,12 @@ function updateAutoMotor(boatState, externalState) {
     return
   }
 
+  // Use command state for deployment intent (primary indicator)
+  // Fall back to chainDirection if command not available (for compatibility)
+  const command = externalState.command
   const chainDirection = externalState.chainDirection
+  const deploymentIntent = command || chainDirection
+
   const boatSpeed = boatState.speed || 0
   const slack = externalState.slack
 
@@ -263,7 +286,7 @@ function updateAutoMotor(boatState, externalState) {
 
   const currentMotorState = getMotorState()
 
-  if (chainDirection === 'down') {
+  if (deploymentIntent === 'down' || deploymentIntent === 'autoDrop') {
     // DEPLOYMENT: Need boat to move away from anchor
     // If wind isn't moving boat fast enough, engage motorBackward
 
@@ -285,7 +308,7 @@ function updateAutoMotor(boatState, externalState) {
       }
     }
 
-  } else if (chainDirection === 'up') {
+  } else if (deploymentIntent === 'up' || deploymentIntent === 'autoRetrieve') {
     // RETRIEVAL: Need slack in chain for lifting
     // Engage motorForward to move toward anchor and create slack
 

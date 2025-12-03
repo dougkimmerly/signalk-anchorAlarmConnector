@@ -2,7 +2,7 @@ const tokenManager = require('./tokenManager')
 const axios = require('axios')
 
 // Test simulation module (enable testMode in settings to use)
-const testSimulation = require('./testSimulation')
+const testSimulation = require('./testingSimulator')
 
 // Plugin state
 let serverBaseUrl = null

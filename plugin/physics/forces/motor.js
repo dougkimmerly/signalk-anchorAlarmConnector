@@ -95,14 +95,33 @@ function getMotorState() {
 /**
  * Calculate motor force
  *
- * Force is applied along the boat's heading direction:
- * - Forward: thrust in direction of heading
- * - Backward: thrust opposite to heading
+ * Force direction depends on motor direction and context:
+ * - Forward with anchor: thrust TOWARD ANCHOR (for retrieval - steers boat to anchor)
+ * - Forward without anchor: thrust in direction of heading
+ * - Backward: thrust opposite to heading (for deployment)
  *
  * @param {number} boatHeading - Boat heading in degrees (0=North, 90=East)
+ * @param {number} [bearingToAnchor] - Bearing to anchor in degrees (optional, for retrieval steering)
+ * @param {number} [distanceToAnchor] - Distance to anchor in meters (optional, to stop when close)
+ * @param {number} [boatSpeed] - Boat speed in m/s (optional, for velocity-based throttle)
  * @returns {{forceX: number, forceY: number, magnitude: number, direction: string}}
  */
-function calculateMotorForce(boatHeading) {
+function calculateMotorForce(boatHeading, bearingToAnchor = null, distanceToAnchor = null, boatSpeed = null) {
+  // Distance-based motor control during forward (retrieval) operation
+  const STOP_DISTANCE = 3.0     // meters - stop motor completely
+  const RAMP_DISTANCE = 25.0    // meters - start ramping down throttle (increased from 15)
+
+  if (motorState.direction === 'forward' && distanceToAnchor !== null && distanceToAnchor < STOP_DISTANCE) {
+    return {
+      forceX: 0,
+      forceY: 0,
+      magnitude: 0,
+      direction: 'stop',
+      throttle: motorState.throttle,
+      reason: 'close_to_anchor'
+    }
+  }
+
   if (motorState.direction === 'stop' || motorState.throttle <= 0) {
     return {
       forceX: 0,
@@ -117,16 +136,44 @@ function calculateMotorForce(boatHeading) {
 
   // Select thrust based on direction
   const maxThrust = motorState.direction === 'forward' ? forwardThrust : backwardThrust
-  const thrust = maxThrust * motorState.throttle
 
-  // Calculate thrust direction based on heading
-  // Forward = along heading, Backward = opposite to heading
-  const headingRad = boatHeading * Math.PI / 180
-  let thrustDirection = headingRad
+  // Calculate effective throttle - ramp down when approaching anchor
+  let effectiveThrottle = motorState.throttle
+  if (motorState.direction === 'forward' && distanceToAnchor !== null && distanceToAnchor < RAMP_DISTANCE) {
+    // Quadratic ramp: much more aggressive reduction as we approach
+    // At RAMP_DISTANCE: 100%, at STOP_DISTANCE: 5%
+    const normalizedDistance = (distanceToAnchor - STOP_DISTANCE) / (RAMP_DISTANCE - STOP_DISTANCE)
+    const rampFactor = normalizedDistance * normalizedDistance  // Quadratic for aggressive early reduction
+    const minThrottle = 0.05  // 5% minimum throttle in ramp zone (reduced from 20%)
+    effectiveThrottle = motorState.throttle * (minThrottle + rampFactor * (1 - minThrottle))
 
-  if (motorState.direction === 'backward') {
-    // Reverse thrust - opposite to heading
+    // Additional velocity-based reduction: if moving fast, reduce throttle more
+    // This prevents momentum buildup
+    if (boatSpeed !== null && boatSpeed > 0.3) {
+      // At 0.3 m/s: no extra reduction
+      // At 1.0 m/s: reduce to 20% of calculated throttle
+      const speedFactor = Math.max(0.2, 1.0 - (boatSpeed - 0.3) / 0.7 * 0.8)
+      effectiveThrottle *= speedFactor
+    }
+  }
+
+  const thrust = maxThrust * effectiveThrottle
+
+  // Calculate thrust direction
+  let thrustDirection
+
+  if (motorState.direction === 'forward' && bearingToAnchor !== null) {
+    // RETRIEVAL: Steer toward anchor, not along boat heading
+    // This simulates the skipper steering toward the anchor while motoring forward
+    thrustDirection = bearingToAnchor * Math.PI / 180
+  } else if (motorState.direction === 'backward') {
+    // DEPLOYMENT: Reverse thrust - opposite to heading
+    const headingRad = boatHeading * Math.PI / 180
     thrustDirection = headingRad + Math.PI
+  } else {
+    // Default: thrust along boat heading
+    const headingRad = boatHeading * Math.PI / 180
+    thrustDirection = headingRad
   }
 
   // Convert to force components

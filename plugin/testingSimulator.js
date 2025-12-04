@@ -33,6 +33,10 @@ let testDataLog = []
 let loggingEnabled = false
 let testStartTime = null
 
+// Auto-motor state for gradual throttle ramp
+let lastAutoMotorUpdate = Date.now()
+let currentAutoThrottle = 0
+
 /**
  * Start the V2 simulation
  *
@@ -250,6 +254,8 @@ function readExternalState() {
  * RETRIEVAL (command='autoRetrieve' or chainDirection='up'):
  * - Engage motorForward to create slack for chain lifting
  * - Need slack in chain so windlass can lift it
+ * - Uses GRADUAL THROTTLE RAMP to prevent sudden boat jumps
+ * - Throttle is proportional to slack deficit
  *
  * IDLE (no command or chainDirection):
  * - Stop motor to save energy
@@ -270,8 +276,15 @@ function updateAutoMotor(boatState, externalState) {
     return
   }
 
-  // Use command state for deployment intent (primary indicator)
-  // Fall back to chainDirection if command not available (for compatibility)
+  // Calculate time since last update for throttle ramping
+  const now = Date.now()
+  const dtSeconds = (now - lastAutoMotorUpdate) / 1000
+  lastAutoMotorUpdate = now
+
+  // Use command state for deployment intent (PRIMARY indicator)
+  // IMPORTANT: chainDirection only shows 'down'/'up' when chain is actively moving
+  // It goes to 'idle' during pauses. command persists throughout the operation.
+  // Fall back to chainDirection only if command not available (for compatibility)
   const command = externalState.command
   const chainDirection = externalState.chainDirection
   const deploymentIntent = command || chainDirection
@@ -284,62 +297,150 @@ function updateAutoMotor(boatState, externalState) {
   const deployTargetSpeed = cfg.motor?.deployTargetSpeed ?? 0.5
   const retrieveSlackTarget = cfg.motor?.retrieveSlackTarget ?? 1.0
 
+  // Throttle ramp parameters
+  const throttleRampRate = cfg.motor?.throttleRampRate ?? 0.1
+  const retrieveMinThrottle = cfg.motor?.retrieveMinThrottle ?? 0.1
+  const retrieveMaxThrottle = cfg.motor?.retrieveMaxThrottle ?? 0.5
+
   const currentMotorState = getMotorState()
 
   if (deploymentIntent === 'down' || deploymentIntent === 'autoDrop') {
     // DEPLOYMENT: Need boat to move away from anchor
-    // If wind isn't moving boat fast enough, engage motorBackward
+    // Only engage motorBackward if wind isn't providing enough speed
+    // Use PROPORTIONAL CONTROL with GRADUAL RAMP to prevent sudden jumps
 
     if (boatSpeed < deployMinSpeed) {
-      // Too slow - engage motor backward at full throttle
-      if (currentMotorState.direction !== 'backward' || currentMotorState.throttle < 1.0) {
+      // Too slow - calculate proportional throttle based on speed deficit
+      const speedDeficit = deployMinSpeed - boatSpeed
+      const proportionalThrottle = Math.min(
+        retrieveMaxThrottle,  // Reuse same max throttle cap
+        retrieveMinThrottle + (speedDeficit / deployMinSpeed) * (retrieveMaxThrottle - retrieveMinThrottle)
+      )
+
+      // Gradually ramp toward target throttle
+      const maxThrottleChange = throttleRampRate * dtSeconds
+      if (currentAutoThrottle < proportionalThrottle) {
+        currentAutoThrottle = Math.min(proportionalThrottle, currentAutoThrottle + maxThrottleChange)
+      } else {
+        currentAutoThrottle = Math.max(proportionalThrottle, currentAutoThrottle - maxThrottleChange)
+      }
+
+      // Engage motor if not already backward
+      if (currentMotorState.direction !== 'backward') {
         setForceEnabled('motor', true)
         setMotorDirection('backward')
-        setMotorThrottle(1.0)
-        console.log(`[AUTO-MOTOR] Deployment assist: speed ${boatSpeed.toFixed(2)} m/s < ${deployMinSpeed} m/s, engaging motorBackward`)
+        console.log(`[AUTO-MOTOR] Deployment assist: speed ${boatSpeed.toFixed(2)} m/s < ${deployMinSpeed} m/s, ramping motorBackward`)
       }
-    } else if (boatSpeed > deployTargetSpeed * 1.2) {
-      // Moving fast enough - reduce or stop motor
-      if (currentMotorState.direction === 'backward') {
-        setMotorDirection('stop')
-        setMotorThrottle(0)
-        setForceEnabled('motor', false)
-        console.log(`[AUTO-MOTOR] Deployment: speed ${boatSpeed.toFixed(2)} m/s sufficient, stopping motor`)
+
+      setMotorThrottle(currentAutoThrottle)
+
+    } else if (boatSpeed > deployTargetSpeed) {
+      // Moving fast enough - gradually reduce and stop motor
+      const maxThrottleChange = throttleRampRate * dtSeconds
+      currentAutoThrottle = Math.max(0, currentAutoThrottle - maxThrottleChange)
+
+      if (currentAutoThrottle <= 0.01) {
+        // Fully ramped down - stop motor
+        if (currentMotorState.direction === 'backward') {
+          setMotorDirection('stop')
+          setMotorThrottle(0)
+          setForceEnabled('motor', false)
+          currentAutoThrottle = 0
+          console.log(`[AUTO-MOTOR] Deployment: speed ${boatSpeed.toFixed(2)} m/s sufficient, motor stopped`)
+        }
+      } else {
+        setMotorThrottle(currentAutoThrottle)
       }
     }
 
   } else if (deploymentIntent === 'up' || deploymentIntent === 'autoRetrieve') {
-    // RETRIEVAL: Need slack in chain for lifting
-    // Engage motorForward to move toward anchor and create slack
+    // RETRIEVAL: Need slack in chain for lifting AND boat close to anchor
+    // Use PROPORTIONAL CONTROL with GRADUAL RAMP to prevent sudden jumps
+    //
+    // Two conditions to keep motor running:
+    // 1. Slack is below target (chain is tight, need to move toward anchor)
+    // 2. Boat is far from anchor (even with slack, boat overshot and needs to return)
 
-    if (slack !== undefined && slack < retrieveSlackTarget) {
-      // Not enough slack - engage motor forward
-      if (currentMotorState.direction !== 'forward' || currentMotorState.throttle < 1.0) {
+    const distanceToAnchor = boat ? boat.getDistanceToAnchor() : null
+    const CLOSE_TO_ANCHOR_THRESHOLD = 5.0  // meters - consider "close enough" when within this distance
+
+    // Need motor if: slack is low OR boat is far from anchor
+    const needSlack = slack !== undefined && slack < retrieveSlackTarget
+    const needToApproach = distanceToAnchor !== null && distanceToAnchor > CLOSE_TO_ANCHOR_THRESHOLD
+
+    if (needSlack || needToApproach) {
+      // Calculate target throttle based on which need is greater
+      let proportionalThrottle
+
+      if (needSlack) {
+        // Throttle based on slack deficit
+        const slackDeficit = retrieveSlackTarget - slack
+        proportionalThrottle = Math.min(
+          retrieveMaxThrottle,
+          retrieveMinThrottle + (slackDeficit / retrieveSlackTarget) * (retrieveMaxThrottle - retrieveMinThrottle)
+        )
+      } else {
+        // Throttle based on distance to anchor (lower throttle since we have slack)
+        // Use lower throttle to avoid building too much momentum
+        const distanceFactor = Math.min(1.0, (distanceToAnchor - CLOSE_TO_ANCHOR_THRESHOLD) / 20.0)
+        proportionalThrottle = retrieveMinThrottle + distanceFactor * (retrieveMaxThrottle * 0.5 - retrieveMinThrottle)
+      }
+
+      // Gradually ramp toward target throttle
+      const maxThrottleChange = throttleRampRate * dtSeconds
+      if (currentAutoThrottle < proportionalThrottle) {
+        currentAutoThrottle = Math.min(proportionalThrottle, currentAutoThrottle + maxThrottleChange)
+      } else {
+        currentAutoThrottle = Math.max(proportionalThrottle, currentAutoThrottle - maxThrottleChange)
+      }
+
+      // Engage motor if not already forward, or update throttle
+      if (currentMotorState.direction !== 'forward') {
         setForceEnabled('motor', true)
         setMotorDirection('forward')
-        setMotorThrottle(1.0)
-        console.log(`[AUTO-MOTOR] Retrieval assist: slack ${slack.toFixed(2)}m < ${retrieveSlackTarget}m, engaging motorForward`)
+        const reason = needSlack ? `slack ${slack.toFixed(2)}m < ${retrieveSlackTarget}m` : `dist ${distanceToAnchor.toFixed(1)}m > ${CLOSE_TO_ANCHOR_THRESHOLD}m`
+        console.log(`[AUTO-MOTOR] Retrieval: ${reason}, ramping motorForward`)
       }
-    } else if (slack !== undefined && slack > retrieveSlackTarget * 1.5) {
-      // Enough slack - stop motor
-      if (currentMotorState.direction === 'forward') {
-        setMotorDirection('stop')
-        setMotorThrottle(0)
-        setForceEnabled('motor', false)
-        console.log(`[AUTO-MOTOR] Retrieval: slack ${slack.toFixed(2)}m sufficient, stopping motor`)
+
+      setMotorThrottle(currentAutoThrottle)
+
+    } else if (slack !== undefined && slack > retrieveSlackTarget * 1.5 &&
+               (distanceToAnchor === null || distanceToAnchor <= CLOSE_TO_ANCHOR_THRESHOLD)) {
+      // Enough slack AND close to anchor - gradually reduce and stop motor
+      const maxThrottleChange = throttleRampRate * dtSeconds
+      currentAutoThrottle = Math.max(0, currentAutoThrottle - maxThrottleChange)
+
+      if (currentAutoThrottle <= 0.01) {
+        // Fully ramped down - stop motor
+        if (currentMotorState.direction === 'forward') {
+          setMotorDirection('stop')
+          setMotorThrottle(0)
+          setForceEnabled('motor', false)
+          currentAutoThrottle = 0
+          console.log(`[AUTO-MOTOR] Retrieval: slack ${slack.toFixed(2)}m sufficient, dist ${distanceToAnchor?.toFixed(1) || '?'}m, motor stopped`)
+        }
+      } else {
+        setMotorThrottle(currentAutoThrottle)
       }
     }
 
   } else {
-    // IDLE: No chain movement - stop motor if it was auto-engaged
-    // Only stop if motor is running (don't interfere with manual control)
-    // We track this by checking if motor is enabled but we're not deploying/retrieving
+    // IDLE: No chain movement - gradually stop motor if it was auto-engaged
     if (currentMotorState.direction !== 'stop' && isForceEnabled('motor')) {
-      // Motor is running but chain is idle - likely auto-engaged, so stop it
-      setMotorDirection('stop')
-      setMotorThrottle(0)
-      setForceEnabled('motor', false)
-      console.log(`[AUTO-MOTOR] Chain idle, stopping motor`)
+      // Ramp down throttle before stopping
+      const maxThrottleChange = throttleRampRate * dtSeconds
+      currentAutoThrottle = Math.max(0, currentAutoThrottle - maxThrottleChange)
+
+      if (currentAutoThrottle <= 0.01) {
+        // Motor is running but chain is idle - stop it
+        setMotorDirection('stop')
+        setMotorThrottle(0)
+        setForceEnabled('motor', false)
+        currentAutoThrottle = 0
+        console.log(`[AUTO-MOTOR] Chain idle, motor stopped`)
+      } else {
+        setMotorThrottle(currentAutoThrottle)
+      }
     }
   }
 }
@@ -441,6 +542,10 @@ function stopTestSimulation() {
   if (boat) boat.reset()
   if (environment) environment.reset()
   if (integrator) integrator.reset()
+
+  // Reset auto-motor state
+  currentAutoThrottle = 0
+  lastAutoMotorUpdate = Date.now()
 
   console.log('V2 simulation stopped')
 }
@@ -591,6 +696,8 @@ function getSimulationState() {
     forces: integrator.getLastForces(),
     config: getConfig(),
     iteration: integrator.getIteration(),
+    distanceToAnchor: boat.getDistanceToAnchor(),
+    bearingToAnchor: boat.getBearingToAnchor(),
   }
 }
 
@@ -609,6 +716,10 @@ function resetSimulation() {
   if (boat) boat.reset()
   if (environment) environment.reset()
   if (integrator) integrator.reset()
+
+  // Reset auto-motor state
+  currentAutoThrottle = 0
+  lastAutoMotorUpdate = Date.now()
 
   clearTestData()
 

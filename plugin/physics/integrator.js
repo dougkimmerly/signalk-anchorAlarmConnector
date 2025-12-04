@@ -150,9 +150,21 @@ function createIntegrator(boat, environment) {
       // ============================================
       // MOTOR FORCE (Phase 4)
       // Thrust along/opposite heading for deployment/retrieval
+      // During retrieval: steer toward anchor (not just along heading)
+      // Stop motor when within 3m of anchor
+      // Velocity-based throttle reduction to prevent overshoot
       // ============================================
       if (isForceEnabled('motor')) {
-        const motorForce = calculateMotorForce(boatState.heading)
+        const bearingToAnchor = boat.getBearingToAnchor()
+        const distanceToAnchor = boat.getDistanceToAnchor()
+        const boatSpeed = Math.sqrt(boatState.velocityX ** 2 + boatState.velocityY ** 2)
+
+        const motorForce = calculateMotorForce(
+          boatState.heading,
+          bearingToAnchor,      // For retrieval: steer toward anchor
+          distanceToAnchor,     // Stop when close to anchor
+          boatSpeed             // Velocity-based throttle reduction
+        )
 
         totalForceX += motorForce.forceX
         totalForceY += motorForce.forceY
@@ -163,6 +175,7 @@ function createIntegrator(boat, environment) {
           magnitude: motorForce.magnitude,
           direction: motorForce.direction,
           throttle: motorForce.throttle,
+          reason: motorForce.reason,  // e.g., 'close_to_anchor'
         }
       } else {
         lastForces.motor = { forceX: 0, forceY: 0, magnitude: 0, direction: 'stop', throttle: 0 }
@@ -174,33 +187,58 @@ function createIntegrator(boat, environment) {
       // Two components:
       // 1. Chain weight force (catenary) - pulls boat toward anchor
       // 2. Velocity constraint (dead stop) - prevents moving away from anchor
+      //
+      // BEHAVIOR BY MODE:
+      // - DEPLOYMENT: Disable chain weight force so boat drifts away with wind
+      // - RETRIEVAL: Chain weight force ACTIVE - this naturally pulls boat
+      //   toward anchor as windlass takes up slack. Motor only if needed.
+      // - IDLE: Both active for normal anchored behavior
       // ============================================
       if (isForceEnabled('slackConstraint') && boatState.isAnchored) {
         const bearingToAnchor = boat.getBearingToAnchor()
         const slack = externalState.slack  // From chain controller via SignalK
         const depth = externalState.depth || envState.depth || config.environment.depth
 
+        // Check if actively deploying chain (boat should drift freely)
+        // IMPORTANT: Use command as primary indicator, chainDirection only shows
+        // 'down'/'up' when chain is moving - it goes to 'idle' during pauses
+        const isDeploying = externalState.command === 'autoDrop' ||
+                           externalState.chainDirection === 'down'
+
         if (bearingToAnchor !== null && slack !== undefined) {
           // 1. CHAIN WEIGHT FORCE (catenary effect)
           // Applied as a normal force - pulls boat toward anchor based on
           // how much chain is suspended (lifted off seabed)
-          // This creates natural "bounce back" when chain becomes taut
-          const chainForce = calculateChainWeightForce(slack, depth, bearingToAnchor)
-          totalForceX += chainForce.forceX
-          totalForceY += chainForce.forceY
+          // DISABLED during deployment - boat needs to drift away with wind
+          // ENABLED during retrieval - this is how boat naturally moves forward
+          if (!isDeploying) {
+            const chainForce = calculateChainWeightForce(slack, depth, bearingToAnchor)
+            totalForceX += chainForce.forceX
+            totalForceY += chainForce.forceY
 
-          lastForces.chainWeight = {
-            forceX: chainForce.forceX,
-            forceY: chainForce.forceY,
-            magnitude: chainForce.magnitude,
-            suspendedLength: chainForce.suspendedLength,
+            lastForces.chainWeight = {
+              forceX: chainForce.forceX,
+              forceY: chainForce.forceY,
+              magnitude: chainForce.magnitude,
+              suspendedLength: chainForce.suspendedLength,
+            }
+          } else {
+            // Deploying - no chain weight force (let wind push boat away)
+            lastForces.chainWeight = { forceX: 0, forceY: 0, magnitude: 0, suspendedLength: 0, disabled: 'deploying' }
           }
 
           // 2. VELOCITY CONSTRAINT (dead stop)
           // Activate when slack <= buffer (approaching taut)
           // Buffer prevents overshoot - constraint activates slightly before fully taut
           // This zeros the velocity component moving away from anchor
-          const isConstrained = isConstraintActive(slack)
+          //
+          // During DEPLOYMENT: Only apply constraint when slack < 0 (rode fully extended)
+          //   - Boat can drift freely while there's slack (chain weight force disabled)
+          //   - But boat CANNOT drift past the rode length (physically impossible)
+          // During RETRIEVAL/IDLE: Apply constraint when slack <= buffer (normal behavior)
+          const isConstrained = isDeploying
+            ? (slack < 0)  // During deployment: hard stop only when rode fully extended
+            : isConstraintActive(slack)  // Normal: activate at buffer threshold
           boat.setVelocityConstraint(isConstrained, bearingToAnchor)
 
           // Calculate tension ratio for logging

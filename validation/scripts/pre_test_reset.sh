@@ -11,7 +11,7 @@ echo "======================================"
 # Step 1: Stop chain controller
 echo ""
 echo "Step 1: Stopping chain controller..."
-cd /home/doug/src/test_framework
+cd /home/doug/src/signalk-anchorAlarmConnector/validation/scripts
 python3 stop_chain.py || { echo "✗ Failed to stop chain"; exit 1; }
 sleep 1
 

@@ -16,7 +16,7 @@ curl http://localhost:80/plugins/signalk-anchoralarmconnector
 ### 2. Start the Test Session
 
 ```bash
-cd /home/doug/src/test_framework
+cd /home/doug/src/signalk-anchorAlarmConnector/validation/scripts
 python3 overnight_test_runner.py
 ```
 

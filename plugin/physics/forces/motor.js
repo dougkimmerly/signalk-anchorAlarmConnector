@@ -106,12 +106,22 @@ function getMotorState() {
  * @param {number} [boatSpeed] - Boat speed in m/s (optional, for velocity-based throttle)
  * @returns {{forceX: number, forceY: number, magnitude: number, direction: string}}
  */
-function calculateMotorForce(boatHeading, bearingToAnchor = null, distanceToAnchor = null, boatSpeed = null) {
+function calculateMotorForce(boatHeading, bearingToAnchor = null, distanceToAnchor = null, boatSpeed = null, rodeDeployed = null) {
   // Distance-based motor control during forward (retrieval) operation
-  const STOP_DISTANCE = 3.0     // meters - stop motor completely
-  const RAMP_DISTANCE = 25.0    // meters - start ramping down throttle (increased from 15)
+  // IMPORTANT: Don't stop motor just because boat is close to anchor!
+  // During active retrieval, motor must keep running to maintain slack for windlass.
+  // Only stop when: close to anchor AND rode is nearly fully retrieved
+  const STOP_DISTANCE = 3.0     // meters - stop motor completely when very close
+  const RAMP_DISTANCE = 20.0    // meters - start ramping down throttle
+  const MIN_RODE_FOR_STOP = 3.0 // meters - only stop if rode is less than this
 
-  if (motorState.direction === 'forward' && distanceToAnchor !== null && distanceToAnchor < STOP_DISTANCE) {
+  // Only stop motor when BOTH conditions are met:
+  // 1. Boat is close to anchor (< 3m)
+  // 2. Rode is nearly fully retrieved (< 3m)
+  const closeToAnchor = distanceToAnchor !== null && distanceToAnchor < STOP_DISTANCE
+  const rodeNearlyIn = rodeDeployed !== null && rodeDeployed < MIN_RODE_FOR_STOP
+
+  if (motorState.direction === 'forward' && closeToAnchor && rodeNearlyIn) {
     return {
       forceX: 0,
       forceY: 0,
@@ -119,6 +129,34 @@ function calculateMotorForce(boatHeading, bearingToAnchor = null, distanceToAnch
       direction: 'stop',
       throttle: motorState.throttle,
       reason: 'close_to_anchor'
+    }
+  }
+
+  // ANCHOR AHEAD CHECK: If anchor is directly ahead of boat, don't motor forward
+  // This prevents the boat from trying to motor "through" the anchor when the
+  // boat has already reached the anchor position (common when boat weathervanes
+  // into wind and anchor happens to be upwind)
+  if (motorState.direction === 'forward' && bearingToAnchor !== null) {
+    // Calculate angle difference between boat heading and bearing to anchor
+    let angleDiff = bearingToAnchor - boatHeading
+    // Normalize to -180 to +180
+    while (angleDiff > 180) angleDiff -= 360
+    while (angleDiff < -180) angleDiff += 360
+
+    // If anchor is within 45° of straight ahead AND boat is close to anchor,
+    // stop motor - the boat is already at or past the anchor
+    const anchorAhead = Math.abs(angleDiff) < 45
+    const veryCloseToAnchor = distanceToAnchor !== null && distanceToAnchor < 5.0
+
+    if (anchorAhead && veryCloseToAnchor) {
+      return {
+        forceX: 0,
+        forceY: 0,
+        magnitude: 0,
+        direction: 'stop',
+        throttle: motorState.throttle,
+        reason: 'anchor_ahead'
+      }
     }
   }
 

@@ -24,7 +24,15 @@ TEST_DIR = SCRIPTS_DIR.parent  # Parent test/ directory
 SESSION_DIR = None
 PROGRESS_FILE = None
 TEST_LOG = None
-TEST_TIMEOUT = 600  # 10 minutes per test
+# Dynamic timeout based on depth - deeper deployments take longer
+# Base: 300s (5 min) + 60s per meter of depth
+# 3m: 480s (8 min), 5m: 600s (10 min), 8m: 780s (13 min), 12m: 1020s (17 min)
+def get_test_timeout(depth_m):
+    """Calculate dynamic timeout based on water depth"""
+    base_timeout = 300  # 5 minutes base
+    depth_factor = 60   # 1 minute per meter of depth
+    return base_timeout + (depth_m * depth_factor)
+
 SAMPLE_INTERVAL = 0.5  # 500ms sampling
 MAX_RETRIES = 2
 
@@ -43,7 +51,7 @@ def setup_session():
     """Create session directory and initialize logging"""
     global SESSION_DIR, PROGRESS_FILE, TEST_LOG
 
-    session_timestamp = datetime.now().strftime('%Y%m%d')
+    session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     SESSION_DIR = TEST_DIR / f'overnight_tests_{session_timestamp}'
     SESSION_DIR.mkdir(exist_ok=True)
 
@@ -342,6 +350,72 @@ def get_heading(token):
     except:
         return None
 
+def get_rode_deployed(token):
+    """Get rode deployed from SignalK (from chain controller)"""
+    try:
+        url = f"{BASE_URL}/signalk/v1/api/vessels/self/navigation/anchor/rodeDeployed/value"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {token}')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read())
+    except:
+        return None
+
+def get_scope(token):
+    """Get scope ratio from SignalK"""
+    try:
+        url = f"{BASE_URL}/signalk/v1/api/vessels/self/navigation/anchor/scope/value"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {token}')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read())
+    except:
+        return None
+
+def get_anchor_command(token):
+    """Get current anchor command state (autoDrop/autoRetrieve/idle)"""
+    try:
+        url = f"{BASE_URL}/signalk/v1/api/vessels/self/navigation/anchor/command/value"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {token}')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read())
+    except:
+        return None
+
+def get_chain_direction(token):
+    """Get chain direction (up/down/idle)"""
+    try:
+        url = f"{BASE_URL}/signalk/v1/api/vessels/self/navigation/anchor/chainDirection/value"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {token}')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read())
+    except:
+        return None
+
+def get_anchor_position(token):
+    """Get anchor position (lat/lon/altitude)"""
+    try:
+        url = f"{BASE_URL}/signalk/v1/api/vessels/self/navigation/anchor/position/value"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {token}')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read())
+    except:
+        return None
+
+def get_auto_stage(token):
+    """Get current auto operation stage"""
+    try:
+        url = f"{BASE_URL}/signalk/v1/api/vessels/self/navigation/anchor/autoStage/value"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f'Bearer {token}')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read())
+    except:
+        return None
+
 def send_command(token, command):
     """Send anchor control command via SignalK PUT handler"""
     try:
@@ -362,6 +436,14 @@ def collect_sample(token, start_pos, start_lat, start_lon, start_time):
         speed = get_speed(token)
         heading = get_heading(token)
         sim_state = get_simulation_state(token)
+        rode_deployed = get_rode_deployed(token)
+        scope = get_scope(token)
+
+        # Critical windlass state data for debugging deployment issues
+        anchor_command = get_anchor_command(token)
+        chain_direction = get_chain_direction(token)
+        anchor_position = get_anchor_position(token)
+        auto_stage = get_auto_stage(token)
 
         # Position, speed, and heading are required for a valid sample
         if not (pos and speed is not None and heading is not None):
@@ -381,7 +463,14 @@ def collect_sample(token, start_pos, start_lat, start_lon, start_time):
                 'speed': speed,
                 'heading': heading % 360 if heading else 0
             },
-            'distance_from_start': lat_delta
+            'distance_from_start': lat_delta,
+            'rodeDeployed': rode_deployed,
+            'scope': scope,
+            # Windlass control state - critical for diagnosing deployment issues
+            'anchorCommand': anchor_command,        # autoDrop/autoRetrieve/idle
+            'chainDirection': chain_direction,      # up/down/idle
+            'anchorPosition': anchor_position,      # {lat, lon, altitude}
+            'autoStage': auto_stage                 # current operation stage
         }
 
         # Add simulation state if available (non-empty dict)
@@ -417,14 +506,17 @@ def run_test(test_num, wind_speed, depth, test_type):
         return None
     log_test(f'✓ Chain controller ready')
 
-    # Phase 1: Reset and verify
-    log_test(f'[PHASE 1] Resetting anchor...')
-    if not stop_chain() or not reset_anchor():
-        log_test(f'✗ FAILED: Could not reset anchor')
-        tests_failed += 1
-        tests_completed += 1
-        return None
-    log_test(f'✓ Anchor reset')
+    # Phase 1: Reset and verify (only for autoDrop; autoRetrieve uses deployed anchor)
+    if test_type == 'autoDrop':
+        log_test(f'[PHASE 1] Resetting anchor...')
+        if not stop_chain() or not reset_anchor():
+            log_test(f'✗ FAILED: Could not reset anchor')
+            tests_failed += 1
+            tests_completed += 1
+            return None
+        log_test(f'✓ Anchor reset')
+    else:
+        log_test(f'[PHASE 1] Skipping reset (using deployed anchor from previous test)')
 
     # Phase 2: Configure environment
     log_test(f'[PHASE 2] Configuring environment: {wind_speed}kn, {depth}m depth')
@@ -433,11 +525,16 @@ def run_test(test_num, wind_speed, depth, test_type):
         tests_failed += 1
         tests_completed += 1
         return None
-    # Reset simulation to apply new config with fresh state
-    if not reset_simulation():
-        log_test(f'! Warning: Simulation reset failed, continuing anyway')
-    time.sleep(1)  # Allow simulation to stabilize
-    log_test(f'✓ Environment configured and simulation reset')
+    # Reset simulation to apply new config with fresh state (autoDrop only)
+    # autoRetrieve tests must preserve deployed rode from previous test
+    if test_type == 'autoDrop':
+        if not reset_simulation():
+            log_test(f'! Warning: Simulation reset failed, continuing anyway')
+        time.sleep(1)  # Allow simulation to stabilize
+        log_test(f'✓ Environment configured and simulation reset')
+    else:
+        time.sleep(1)  # Allow config to stabilize
+        log_test(f'✓ Environment configured (simulation NOT reset to preserve deployed rode)')
 
     # Phase 3: Run test
     log_test(f'[PHASE 3] Running {test_type} test...')
@@ -467,9 +564,12 @@ def run_test(test_num, wind_speed, depth, test_type):
     samples = []
     test_start = time.time()
     next_sample_time = test_start + SAMPLE_INTERVAL
-    max_duration = TEST_TIMEOUT if test_type == 'autoDrop' else TEST_TIMEOUT
+    # Use dynamic timeout based on depth - deeper tests need more time
+    max_duration = get_test_timeout(depth)
     failed_samples = 0
     max_failed_samples = 20  # Abort if 20 consecutive samples fail
+
+    log_test(f'Test timeout: {max_duration}s ({max_duration/60:.1f} minutes) for {depth}m depth')
 
     try:
         while time.time() - test_start < max_duration:
@@ -493,18 +593,17 @@ def run_test(test_num, wind_speed, depth, test_type):
             if len(samples) > 0:
                 latest = samples[-1]
                 if test_type == 'autoDrop':
-                    # Check if target scope reached (from simulation state)
-                    sim_state = latest.get('simulation_state', {})
-                    scope = sim_state.get('scopeRatio', 0)
-                    if scope >= 5.0:
+                    # Check if target scope reached (from SignalK path)
+                    scope = latest.get('scope')
+                    if scope is not None and scope >= 5.0:
                         log_test(f'✓ Target scope reached: {scope:.1f}:1')
                         break
                 elif test_type == 'autoRetrieve':
-                    # Check if rode retrieved (from simulation state)
-                    sim_state = latest.get('simulation_state', {})
-                    rode = sim_state.get('rodeDeployed', 0)
-                    if rode <= 0.1:
-                        log_test(f'✓ Rode fully retrieved: {rode:.1f}m')
+                    # Check if rode retrieved (from SignalK path via chain controller)
+                    # Target is ≤ 2.0m (intentional safety stop, not 0m)
+                    rode = latest.get('rodeDeployed')
+                    if rode is not None and rode <= 2.0:
+                        log_test(f'✓ Rode retrieved to safety stop: {rode:.1f}m')
                         break
     except KeyboardInterrupt:
         log_test('! Test interrupted by user')
@@ -537,11 +636,10 @@ def run_test(test_num, wind_speed, depth, test_type):
     # Calculate summary
     if samples:
         final_sample = samples[-1]
-        sim_state = final_sample.get('simulation_state', {})
 
         test_data['summary'] = {
-            'final_scope': sim_state.get('scopeRatio', 0),
-            'final_rode': sim_state.get('rodeDeployed', 0),
+            'final_scope': final_sample.get('scope', 0) or 0,
+            'final_rode': final_sample.get('rodeDeployed', 0) or 0,
             'final_distance': final_sample.get('distance_from_start', 0),
             'max_speed': max([s.get('position', {}).get('speed', 0) for s in samples]),
             'final_speed': final_sample.get('position', {}).get('speed', 0),
@@ -552,8 +650,17 @@ def run_test(test_num, wind_speed, depth, test_type):
 
     log_test(f'✓ Test data saved: {test_file.name}')
 
-    # Determine pass/fail
-    passed = len(samples) > 0 and test_data.get('summary')
+    # Determine pass/fail based on actual target achievement
+    if test_type == 'autoDrop':
+        # Test passes if scope >= 5.0:1
+        passed = test_data.get('summary', {}).get('final_scope', 0) >= 5.0
+    elif test_type == 'autoRetrieve':
+        # Test passes if rode <= 2.0m (safety stop)
+        passed = test_data.get('summary', {}).get('final_rode', float('inf')) <= 2.0
+    else:
+        # Fallback for unknown test types
+        passed = len(samples) > 0 and test_data.get('summary')
+
     if passed:
         tests_passed += 1
         log_test(f'✓ PASSED')

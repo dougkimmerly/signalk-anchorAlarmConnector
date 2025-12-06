@@ -98,16 +98,23 @@ const config = {
 
   // Motor parameters (for Phase 4)
   motor: {
-    forwardThrust: 500,        // N at full throttle
-    backwardThrust: 300,       // N at full throttle (slower)
-    targetSpeedForward: 1.0,   // m/s target speed toward anchor
-    targetSpeedBackward: 0.5,  // m/s target speed away from anchor (~1kn)
+    forwardThrust: 8000,       // N at full throttle (54 HP motor ~ 8000-10000 N bollard pull)
+    backwardThrust: 5000,      // N at full throttle (reverse ~60% of forward)
+    targetSpeedForward: 1.5,   // m/s target speed toward anchor (~3 knots)
+    targetSpeedBackward: 0.8,  // m/s target speed away from anchor (~1.5 knots)
 
     // Auto-motor control thresholds
     autoMotorEnabled: true,    // Enable automatic motor engagement
-    deployMinSpeed: 0.2,       // m/s - engage motorBackward if below this during deployment
-    deployTargetSpeed: 0.5,    // m/s - target speed during deployment (~1kn)
+    deployMinSpeed: 0.3,       // m/s - engage motorBackward if below this during deployment
+    deployTargetSpeed: 0.8,    // m/s - target speed during deployment (~1.5 knots)
     retrieveSlackTarget: 1.0,  // meters - maintain this much slack during retrieval
+
+    // Throttle ramp control - faster response for strong winds
+    throttleRampRate: 0.3,     // Max throttle change per second (0.3 = ~3.3 seconds to full)
+    retrieveMinThrottle: 0.2,  // Starting throttle for retrieval (20%)
+    retrieveMaxThrottle: 0.9,  // Max auto-throttle for retrieval (90%)
+    deployMinThrottle: 0.2,    // Starting throttle for deployment (20%)
+    deployMaxThrottle: 0.9,    // Max auto-throttle for deployment (90%)
   },
 
   // Slack constraint parameters (Phase 3)

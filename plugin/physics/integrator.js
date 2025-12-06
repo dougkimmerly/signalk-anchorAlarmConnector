@@ -151,19 +151,21 @@ function createIntegrator(boat, environment) {
       // MOTOR FORCE (Phase 4)
       // Thrust along/opposite heading for deployment/retrieval
       // During retrieval: steer toward anchor (not just along heading)
-      // Stop motor when within 3m of anchor
+      // Stop motor when within 3m of anchor AND rode nearly retrieved
       // Velocity-based throttle reduction to prevent overshoot
       // ============================================
       if (isForceEnabled('motor')) {
         const bearingToAnchor = boat.getBearingToAnchor()
         const distanceToAnchor = boat.getDistanceToAnchor()
         const boatSpeed = Math.sqrt(boatState.velocityX ** 2 + boatState.velocityY ** 2)
+        const rodeDeployed = externalState.rodeDeployed || 0
 
         const motorForce = calculateMotorForce(
           boatState.heading,
           bearingToAnchor,      // For retrieval: steer toward anchor
           distanceToAnchor,     // Stop when close to anchor
-          boatSpeed             // Velocity-based throttle reduction
+          boatSpeed,            // Velocity-based throttle reduction
+          rodeDeployed          // Only stop if rode nearly retrieved
         )
 
         totalForceX += motorForce.forceX

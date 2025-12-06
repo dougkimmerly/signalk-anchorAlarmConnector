@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Log files
+*.log
+logs/
+
+# Local configs
+config.json
+token.json
+
+# Environment variables
+.env
+
+# Build output (if you compile or package)
+dist/
+build/
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# MacOS system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# Optional: lock files (uncomment if you want to ignore them)
+# package-lock.json
+# npm-shrinkwrap.json
+
+# Misc
+.env.local
+.cache/
+.nyc_output/   # for test coverage reports
+coverage/     # for test coverage reports
+
+# Temporary files
+*.tmp
+*.temp
+
+# Validation data and results (temporary, not committed to repo)
+validation/data/
+validation/autodrop_*.json

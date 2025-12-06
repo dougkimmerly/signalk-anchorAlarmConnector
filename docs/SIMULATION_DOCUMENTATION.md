@@ -14,10 +14,10 @@ This is a physics-based simulation for testing anchor deployment behavior in Sig
     - Calculates boat movement, forces, and position updates
     - Publishes boat position and anchor data to SignalK
 
-2. **`test_framework/simple_autodrop_test.py`** - Test harness
+2. **`validation/scripts/overnight_test_runner.py`** - Test harness
 
     - Python test runner that controls deployment scenarios
-    - Runs autoDrop deployment logic
+    - Runs autoDrop/autoRetrieve tests across wind/depth combinations
     - Collects simulation data into JSON files for analysis
 
 3. **`DISABLED_FEATURES.md`** - Feature tracking document
@@ -31,6 +31,106 @@ This is a physics-based simulation for testing anchor deployment behavior in Sig
     - Produces movement visualizations and phase analysis
 
 ## How the Simulation Works
+
+### Motor Direction Terminology
+
+**IMPORTANT**: Understanding motor direction is critical to avoid confusion:
+
+- **Motor BACKWARD** = Thrust pushing boat AWAY from anchor (assists deployment)
+- **Motor FORWARD** = Thrust pushing boat TOWARD anchor (assists retrieval)
+
+These terms refer to the boat's motion relative to the anchor, NOT the boat's bow/stern orientation.
+
+### Chain Slack Physics
+
+**Chain slack** is the key metric for understanding anchor operations:
+
+```
+slack = rodeDeployed - distanceFromAnchor
+```
+
+**Slack Values**:
+- **Positive slack (e.g., +3m)**: Chain has extra length lying on seabed or hanging loose
+  - Good: Indicates chain being laid out properly on seabed
+  - Catenary curve can form, providing shock absorption
+
+- **Zero slack (0m)**: Chain is fully extended but not under tension
+  - Acceptable: Chain forms straight line from anchor to boat
+  - No catenary shock absorption available
+
+- **Negative slack (e.g., -2m)**: **Physically impossible** - indicates simulation issue
+  - Chain cannot stretch beyond its deployed length
+  - Boat is moving away faster than chain can deploy
+  - Shown in simulation to reveal control problems
+
+**Why Slack Matters**:
+- **During deployment**: We want to LAY CHAIN OUT EVENLY on the seabed with positive slack (1-3m ideal)
+- **During retrieval**: We want to RETRIEVE CHAIN EVENLY with positive slack for windlass to lift it
+- **At anchor**: Proper scope requires chain lying on seabed in catenary curve
+
+### Deployment Goal: Even Chain Laying
+
+The ideal deployment maintains **1-3 meters of slack** throughout:
+- Chain pays out continuously at controlled rate
+- Boat drifts away from anchor at slightly slower rate than chain deploys
+- Chain settles evenly on seabed, not piled up or stretched tight
+- Motor assists when wind is insufficient to maintain proper drift rate
+
+**Common Mistake**: Fixed speed targets don't work because:
+- In light wind, boat may drift too slowly → chain piles up → excess slack
+- In strong wind, boat may drift too fast → chain can't keep up → negative slack
+- **Solution**: Slack-based speed targeting adjusts motor dynamically
+
+### Retrieval Goal: Even Chain Recovery
+
+The ideal retrieval maintains **1-2 meters of slack** throughout:
+- Windlass lifts chain continuously at controlled rate
+- Boat moves toward anchor at slightly faster rate than chain retrieves
+- Motor assists to keep slack positive so windlass can lift chain without load
+- Chain comes aboard evenly, not in sudden jerks
+
+### Slack-Based Motor Control Algorithm
+
+**Deployment Motor Logic** (implemented in `testingSimulator.js:updateAutoMotor()`):
+
+```javascript
+// Step 1: Determine target speed based on current slack
+if (slack < 1.0m) {
+  targetSpeed = 0         // STOP - boat already moving away well
+} else if (slack < 3.0m) {
+  targetSpeed = 0.4 m/s   // MODERATE - gentle assistance needed
+} else {
+  targetSpeed = 0.8 m/s   // STRONG - boat falling behind chain deployment
+}
+
+// Step 2: Compare actual boat speed to target
+if (boatSpeed < targetSpeed) {
+  // Boat too slow - engage motor backward
+  // Use proportional throttle based on speed deficit
+  throttle = proportional(targetSpeed - boatSpeed)
+  motorBackward(throttle)
+} else {
+  // Boat moving fast enough - ramp down motor
+  rampDownAndStop()
+}
+```
+
+**Why This Works**:
+- **High slack** (chain piling up) → Motor increases target speed → More backward thrust → Boat moves away faster
+- **Low slack** (chain tight) → Motor decreases target speed → Less backward thrust → Boat slows down
+- **Negative slack** → Motor stops completely → Boat slows, chain catches up
+- Creates automatic feedback loop maintaining 1-3m slack
+
+**Retrieval Motor Logic**:
+```javascript
+if (slack < 1.0m) {
+  // Chain tight - need more slack for windlass to lift
+  motorForward(proportionalThrottle)
+} else if (slack > 1.5m) {
+  // Plenty of slack - reduce motor
+  rampDownMotor()
+}
+```
 
 ### Physics Model
 
@@ -66,11 +166,24 @@ Position Update: position = position + v * Δt
     -   Increases with square of velocity
     -   Acts as primary speed limiter at higher velocities
 
-#### 3. Motor Forces (Currently Disabled)
+#### 3. Motor Forces
 
--   **Motor Forward**: Provides forward thrust during retrieval
--   **Motor Backward**: Provides reverse thrust during deployment (disabled)
--   **Status**: `DISABLE_MOTOR_ACTIVITY = true` (line 397)
+**Motor Backward** (Deployment Assist):
+- Pushes boat away from anchor when wind is insufficient
+- Uses **slack-based speed targeting** to maintain even chain laying
+- Target speeds adjust dynamically based on chain slack:
+  - `slack < 1.0m` → Stop motor (boat moving away well enough)
+  - `slack 1.0-3.0m` → Target 0.4 m/s (moderate assistance)
+  - `slack > 3.0m` → Target 0.8 m/s (strong assistance)
+- Prevents negative slack by increasing thrust when chain getting tight
+- Ensures positive slack for proper chain laying on seabed
+
+**Motor Forward** (Retrieval Assist):
+- Pushes boat toward anchor during chain retrieval
+- Maintains slack for windlass to lift chain without load
+- Target: 1.0-1.5m slack during retrieval
+- Proportional throttle based on slack deficit
+- Stops when boat very close to anchor AND rode nearly retrieved
 
 #### 4. Slack Constraint (Currently Disabled)
 
@@ -87,9 +200,37 @@ Position Update: position = position + v * Δt
     -   `sin(angle)` = East component
     -   `cos(angle)` = North component
 
+### Anchor Position Establishment
+
+**When Anchor Position is Set:**
+
+When `dropAnchor` command is sent (rode > depth + bowHeight), the anchor alarm plugin immediately establishes the anchor position:
+- **Latitude/Longitude**: Current boat GPS position
+- **Altitude**: -(current depth + 2m bowHeight)
+
+This happens as soon as the anchor hits the seabed, NOT after deployment completes. The altitude represents the anchor's depth below the water surface.
+
+**Scope Calculation During Deployment:**
+
+Once anchor position is established, scope can be calculated throughout deployment:
+```javascript
+scope = rodeDeployed / (anchorDepth + bowHeight)
+```
+
+Where:
+- `anchorDepth` = abs(anchorPosition.altitude)
+- `bowHeight` = 2m (distance from waterline to bow roller)
+
+**Example at 12m depth:**
+- Anchor hits seabed when rode > 14m (12m + 2m)
+- `dropAnchor` sets anchor position with altitude = -14m
+- At rode = 25m: scope = 25 / (14 + 2) = 1.56:1
+- At rode = 60m: scope = 60 / (14 + 2) = 3.75:1
+- Target: rode = 80m: scope = 80 / (14 + 2) = 5.0:1
+
 ### Virtual vs Real Anchor
 
--   **Real Anchor** (`anchorPos`): Set by alarm system, used for distance calculations
+-   **Real Anchor** (`anchorPos`): Set by alarm system when dropAnchor called, used for distance calculations
 -   **Virtual Anchor** (`virtualAnchorLat/Lon`): Set when deployment starts
     -   Prevents physics explosions when boat manually repositioned
     -   Stays fixed during deployment for consistent force calculations
@@ -147,7 +288,7 @@ This fix prevents alternating N-S-N movement patterns across consecutive tests.
 
 ### Test Configuration
 
-**File**: `test_framework/simple_autodrop_test.py`
+**File**: `validation/scripts/overnight_test_runner.py`
 
 Key parameters:
 
@@ -160,7 +301,7 @@ target_scope: 5.0                # Target deployment (5:1 scope)
 
 ### Test Output Format
 
-**Location**: `test_framework/autodrop_*_*.json`
+**Location**: `validation/data/overnight_tests_*/raw_data/*.json`
 
 Sample structure:
 
@@ -288,28 +429,24 @@ Re-enablement order (suggested):
 ### Single Test
 
 ```bash
-cd /home/doug/src/test_framework
+cd /home/doug/src/signalk-anchorAlarmConnector/validation/scripts
 python3 stop_chain.py
 python3 reset_anchor.py
-python3 simple_autodrop_test.py
+python3 test_deploy_retrieve.py
 ```
 
-### Consecutive Tests
+### Full Test Suite
 
 ```bash
-cd /home/doug/src/test_framework
-for i in 1 2 3; do
-  python3 stop_chain.py && sleep 1
-  python3 reset_anchor.py && sleep 1
-  python3 simple_autodrop_test.py && sleep 2
-done
+cd /home/doug/src/signalk-anchorAlarmConnector/validation/scripts
+python3 overnight_test_runner.py
 ```
 
-### Analyze Results
+### Quick Validation
 
 ```bash
-cd /home/doug/src/test_framework
-python3 analyze_boat_movement.py autodrop_20kn_20251201_024728.json
+cd /home/doug/src/signalk-anchorAlarmConnector/validation/scripts
+python3 quick_validation_test.py
 ```
 
 ## Important Constants

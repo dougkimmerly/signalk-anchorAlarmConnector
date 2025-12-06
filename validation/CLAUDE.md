@@ -2,6 +2,15 @@
 
 This directory contains the test framework for the SignalK Anchor Alarm Connector plugin's physics simulation and autoDrop/autoRetrieve functionality.
 
+## Specialized Agents
+
+For complex tasks, use specialized agents to keep context efficient:
+
+- **Python Coder Agent** (`.claude/agents/python-coder.md`) - For Python code changes in validation framework
+- **Test Analyzer Agent** (`.claude/agents/test-analyzer.md`) - For analyzing test results and identifying issues
+
+See [AGENT_GUIDE.md](AGENT_GUIDE.md) for when and how to use these agents.
+
 ## Directory Structure
 
 ```
@@ -180,10 +189,75 @@ Tests use these endpoints:
 
 Chain controller (ESP32) at: `192.168.20.217`
 
+## CRITICAL: Terminology - Windlass vs Motor
+
+**ALWAYS use correct terminology to avoid confusion:**
+
+### Windlass
+- **What it is**: Mechanical winch that deploys/retrieves the anchor chain (rode)
+- **What it does**: Pays out chain when dropping anchor, pulls chain in when retrieving
+- **Controls**: `navigation.anchor.command` ('autoDrop', 'autoRetrieve', 'idle')
+- **Measures**: `navigation.anchor.rodeDeployed` (meters of chain deployed)
+
+### Motor
+- **What it is**: Boat's main propulsion engine
+- **What it does**: Moves the boat forward/backward through the water
+- **Purpose during anchoring**: Assists deployment by moving boat away from anchor point
+- **Force data**: `simulation_state.forces.motor` (thrust in Newtons)
+
+### WRONG Usage Examples
+- ❌ "Motor deployment" - The motor doesn't deploy chain, the windlass does
+- ❌ "Motor retrieval" - The motor doesn't retrieve chain, the windlass does
+- ❌ "Chain motor" - There is no chain motor, there is a windlass
+
+### CORRECT Usage Examples
+- ✅ "Windlass deployment" - Windlass pays out chain
+- ✅ "Windlass retrieval" - Windlass pulls in chain
+- ✅ "Motor assists deployment" - Motor moves boat while windlass pays out chain
+- ✅ "Windlass control logic" - Code that manages chain deployment/retrieval
+
+## Important: Chain Direction vs Command State
+
+**CRITICAL**: When determining if anchor is being deployed or retrieved, use `navigation.anchor.command` NOT `navigation.anchor.chainDirection`.
+
+### Why?
+
+- `chainDirection` only shows `'down'` or `'up'` when chain is **actively moving**
+- When chain pauses (even briefly), `chainDirection` shows `'idle'`
+- `command` shows the **currently active operation**: `'autoDrop'`, `'autoRetrieve'`, or `'idle'`
+- `command` persists throughout the entire operation, even during pauses
+
+### Correct Usage
+
+```javascript
+// CORRECT - use command as primary indicator
+const isDeploying = externalState.command === 'autoDrop'
+const isRetrieving = externalState.command === 'autoRetrieve'
+
+// WRONG - chainDirection is unreliable for operation state
+const isDeploying = externalState.chainDirection === 'down'  // May show 'idle' during pauses!
+```
+
+### Where This Matters
+
+- **integrator.js**: Deciding when to enable/disable chain weight force and velocity constraint
+- **testingSimulator.js**: Auto-motor control logic
+- Any physics logic that needs to know the current anchor operation
+
 ## Notes
 
 - All paths in scripts use `Path(__file__).parent` for portability
 - Test data JSON files are stored in `data/` subdirectory
-- Each overnight session creates its own `overnight_tests_YYYYMMDD/` directory
+- Each overnight session creates its own `overnight_tests_YYYYMMDD_HHMMSS/` directory (includes start time to prevent duplicates)
 - Historical logs preserved in `logs/` for reference
 - Legacy scripts in `legacy/` are kept for reference but are superseded
+
+## Analysis Best Practices
+
+When analyzing test results:
+
+1. **Filter by session timestamp** - Directory contains files from current session only (check filename timestamps)
+2. **Check TEST_LOG.md first** - Shows which tests actually reached target conditions
+3. **Verify scope/rode values** - Don't trust "PASSED" status alone, check final scope >= 5.0 or rode <= 2.0
+4. **Separate windlass issues from motor issues** - If deployment fails, it's windlass control logic, not motor thrust
+5. **Old duplicate files** - raw_data/ may contain files from previous failed sessions - filter by timestamp

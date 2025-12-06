@@ -36,8 +36,12 @@ signalk-anchorAlarmConnector/
 │   ├── utils/             # Shared Python utilities
 │   └── docs/              # Validation documentation
 │
+├── scripts/               # Maintenance scripts
+│   └── update-signalk-mcp-resources.sh  # MCP server resource updater
+│
 └── docs/                  # Architecture documentation
     ├── SIGNALK_GUIDE.md           # Quick reference for SignalK concepts and paths
+    ├── MCP_SERVER_MAINTENANCE.md  # SignalK MCP server maintenance guide
     ├── SIMULATION_ARCHITECTURE.md
     ├── SIMULATION_DOCUMENTATION.md
     └── SYSTEM_ARCHITECTURE.md
@@ -46,6 +50,14 @@ signalk-anchorAlarmConnector/
 ## Validation Framework
 
 For detailed validation framework documentation, see **[validation/CLAUDE.md](validation/CLAUDE.md)**.
+
+### Specialized Agents for Validation
+
+To manage context efficiently, use specialized agents for validation tasks:
+- **Python Coder Agent** - Python code changes in validation framework
+- **Test Analyzer Agent** - Test result analysis and issue identification
+
+See [validation/AGENT_GUIDE.md](validation/AGENT_GUIDE.md) for usage guide.
 
 Quick commands:
 ```bash
@@ -399,9 +411,61 @@ curl http://localhost:80/signalk/v1/api/vessels/self
 curl http://localhost:80/signalk/v1/api/vessels/self/navigation/headingTrue
 ```
 
+## SignalK MCP Server Integration
+
+This project includes integration with the [SignalK MCP Server](https://github.com/tonybentley/signalk-mcp-server), which provides AI agents (like Claude Code) with streamlined access to vessel data through the Model Context Protocol.
+
+### Configuration
+
+The MCP server is configured in `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "signalk": {
+      "command": "npx",
+      "args": ["-y", "signalk-mcp-server"],
+      "env": {
+        "SIGNALK_HOST": "localhost",
+        "SIGNALK_PORT": "80"
+      }
+    }
+  }
+}
+```
+
+### MCP Server Capabilities
+
+The MCP provides an `execute_code` tool that runs JavaScript with these async functions:
+- `getVesselState()` - Full vessel data (position, heading, speed, etc.)
+- `getAisTargets({ page, pageSize, maxDistance })` - AIS target data
+- `getActiveAlarms()` - System alarms and notifications
+- `listAvailablePaths()` - Available SignalK paths
+- `getPathValue(path)` - Specific path values
+- `getConnectionStatus()` - Connection health status
+
+### Maintenance
+
+**Important**: The npm package has a bug where resource files are missing. The configuration uses `npx` (per developer recommendation), which automatically manages the package. If resource file warnings appear, run:
+
+```bash
+./scripts/update-signalk-mcp-resources.sh
+```
+
+See [docs/MCP_SERVER_MAINTENANCE.md](docs/MCP_SERVER_MAINTENANCE.md) for details.
+
+### Benefits
+
+- **Token efficiency**: 90-96% reduction in token usage vs direct API calls
+- **Simplified queries**: Filter and process data before returning to AI
+- **Type-safe**: V8 isolate execution with SignalK SDK
+- **Real-time**: Direct connection to SignalK server
+
 ## Links & Resources
 
 - [Anchor Alarm Plugin Repository](https://github.com/sbender9/signalk-anchoralarm-plugin)
+- [SignalK MCP Server](https://github.com/tonybentley/signalk-mcp-server)
 - [SignalK Server Documentation](https://demo.signalk.org/documentation/)
 - [SignalK Plugin API](https://demo.signalk.org/documentation/develop/plugins/server_plugin.html)
 - [SignalK Security Documentation](https://demo.signalk.org/documentation/security.html)
+- [Model Context Protocol](https://modelcontextprotocol.io/)

@@ -1,6 +1,6 @@
 {
   "name": "signalk-anchoralarmconnector",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "connection between an anchor windlass controller and an anchor alarm",
   "keywords": [
     "signalk-node-server-plugin",

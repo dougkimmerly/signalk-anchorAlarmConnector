@@ -301,20 +301,41 @@ function updateAutoMotor(boatState, externalState) {
   const throttleRampRate = cfg.motor?.throttleRampRate ?? 0.1
   const retrieveMinThrottle = cfg.motor?.retrieveMinThrottle ?? 0.1
   const retrieveMaxThrottle = cfg.motor?.retrieveMaxThrottle ?? 0.5
+  const deployMinThrottle = cfg.motor?.deployMinThrottle ?? 0.2
+  const deployMaxThrottle = cfg.motor?.deployMaxThrottle ?? 0.9
 
   const currentMotorState = getMotorState()
 
   if (deploymentIntent === 'down' || deploymentIntent === 'autoDrop') {
     // DEPLOYMENT: Need boat to move away from anchor
-    // Only engage motorBackward if wind isn't providing enough speed
+    // Use SLACK-BASED SPEED TARGETING instead of fixed thresholds
+    // - Low slack (<1m) = boat moving away fast enough, STOP motor
+    // - Medium slack (1-3m) = moderate speed target (0.4 m/s)
+    // - High slack (3m+) = boat needs to move away faster (0.8 m/s)
     // Use PROPORTIONAL CONTROL with GRADUAL RAMP to prevent sudden jumps
 
-    if (boatSpeed < deployMinSpeed) {
+    // Determine target speed based on slack during deployment
+    let dynamicDeployTargetSpeed = deployTargetSpeed  // default from config
+
+    if (slack !== undefined) {
+      if (slack < 1.0) {
+        // Very low slack - boat moving away fast enough, STOP motor
+        dynamicDeployTargetSpeed = 0
+      } else if (slack < 3.0) {
+        // Medium slack - moderate speed target
+        dynamicDeployTargetSpeed = 0.4
+      } else {
+        // High slack (3m+) - boat needs to move away faster
+        dynamicDeployTargetSpeed = 0.8
+      }
+    }
+
+    if (boatSpeed < deployMinSpeed && dynamicDeployTargetSpeed > 0) {
       // Too slow - calculate proportional throttle based on speed deficit
       const speedDeficit = deployMinSpeed - boatSpeed
       const proportionalThrottle = Math.min(
-        retrieveMaxThrottle,  // Reuse same max throttle cap
-        retrieveMinThrottle + (speedDeficit / deployMinSpeed) * (retrieveMaxThrottle - retrieveMinThrottle)
+        deployMaxThrottle,  // Use deployment-specific max throttle
+        deployMinThrottle + (speedDeficit / deployMinSpeed) * (deployMaxThrottle - deployMinThrottle)
       )
 
       // Gradually ramp toward target throttle
@@ -329,13 +350,13 @@ function updateAutoMotor(boatState, externalState) {
       if (currentMotorState.direction !== 'backward') {
         setForceEnabled('motor', true)
         setMotorDirection('backward')
-        console.log(`[AUTO-MOTOR] Deployment assist: speed ${boatSpeed.toFixed(2)} m/s < ${deployMinSpeed} m/s, ramping motorBackward`)
+        console.log(`[AUTO-MOTOR] Deployment assist: speed ${boatSpeed.toFixed(2)} m/s < ${deployMinSpeed} m/s, slack ${slack?.toFixed(2)}m, target ${dynamicDeployTargetSpeed} m/s, ramping motorBackward`)
       }
 
       setMotorThrottle(currentAutoThrottle)
 
-    } else if (boatSpeed > deployTargetSpeed) {
-      // Moving fast enough - gradually reduce and stop motor
+    } else if (boatSpeed > dynamicDeployTargetSpeed || dynamicDeployTargetSpeed === 0) {
+      // Moving fast enough OR slack is too low - gradually reduce and stop motor
       const maxThrottleChange = throttleRampRate * dtSeconds
       currentAutoThrottle = Math.max(0, currentAutoThrottle - maxThrottleChange)
 
@@ -346,7 +367,10 @@ function updateAutoMotor(boatState, externalState) {
           setMotorThrottle(0)
           setForceEnabled('motor', false)
           currentAutoThrottle = 0
-          console.log(`[AUTO-MOTOR] Deployment: speed ${boatSpeed.toFixed(2)} m/s sufficient, motor stopped`)
+          const stopReason = dynamicDeployTargetSpeed === 0
+            ? `slack ${slack?.toFixed(2)}m too low (< 1m)`
+            : `speed ${boatSpeed.toFixed(2)} m/s >= target ${dynamicDeployTargetSpeed} m/s`
+          console.log(`[AUTO-MOTOR] Deployment: ${stopReason}, motor stopped`)
         }
       } else {
         setMotorThrottle(currentAutoThrottle)
@@ -354,37 +378,23 @@ function updateAutoMotor(boatState, externalState) {
     }
 
   } else if (deploymentIntent === 'up' || deploymentIntent === 'autoRetrieve') {
-    // RETRIEVAL: Need slack in chain for lifting AND boat close to anchor
-    // Use PROPORTIONAL CONTROL with GRADUAL RAMP to prevent sudden jumps
+    // RETRIEVAL: Motor runs to maintain slack for windlass
+    // Simple logic: if slack is low, motor pushes boat toward anchor
+    // Motor power is proportional to slack deficit
     //
-    // Two conditions to keep motor running:
-    // 1. Slack is below target (chain is tight, need to move toward anchor)
-    // 2. Boat is far from anchor (even with slack, boat overshot and needs to return)
+    // KEY INSIGHT: During active retrieval, the motor MUST keep running to
+    // maintain slack. Don't stop based on distance - stop when retrieval completes.
 
-    const distanceToAnchor = boat ? boat.getDistanceToAnchor() : null
-    const CLOSE_TO_ANCHOR_THRESHOLD = 5.0  // meters - consider "close enough" when within this distance
-
-    // Need motor if: slack is low OR boat is far from anchor
+    // Need motor if slack is below target (chain is tight)
     const needSlack = slack !== undefined && slack < retrieveSlackTarget
-    const needToApproach = distanceToAnchor !== null && distanceToAnchor > CLOSE_TO_ANCHOR_THRESHOLD
 
-    if (needSlack || needToApproach) {
-      // Calculate target throttle based on which need is greater
-      let proportionalThrottle
-
-      if (needSlack) {
-        // Throttle based on slack deficit
-        const slackDeficit = retrieveSlackTarget - slack
-        proportionalThrottle = Math.min(
-          retrieveMaxThrottle,
-          retrieveMinThrottle + (slackDeficit / retrieveSlackTarget) * (retrieveMaxThrottle - retrieveMinThrottle)
-        )
-      } else {
-        // Throttle based on distance to anchor (lower throttle since we have slack)
-        // Use lower throttle to avoid building too much momentum
-        const distanceFactor = Math.min(1.0, (distanceToAnchor - CLOSE_TO_ANCHOR_THRESHOLD) / 20.0)
-        proportionalThrottle = retrieveMinThrottle + distanceFactor * (retrieveMaxThrottle * 0.5 - retrieveMinThrottle)
-      }
+    if (needSlack) {
+      // Throttle proportional to how much slack we need
+      const slackDeficit = retrieveSlackTarget - slack
+      const proportionalThrottle = Math.min(
+        retrieveMaxThrottle,
+        retrieveMinThrottle + (slackDeficit / retrieveSlackTarget) * (retrieveMaxThrottle - retrieveMinThrottle)
+      )
 
       // Gradually ramp toward target throttle
       const maxThrottleChange = throttleRampRate * dtSeconds
@@ -394,19 +404,17 @@ function updateAutoMotor(boatState, externalState) {
         currentAutoThrottle = Math.max(proportionalThrottle, currentAutoThrottle - maxThrottleChange)
       }
 
-      // Engage motor if not already forward, or update throttle
+      // Engage motor if not already forward
       if (currentMotorState.direction !== 'forward') {
         setForceEnabled('motor', true)
         setMotorDirection('forward')
-        const reason = needSlack ? `slack ${slack.toFixed(2)}m < ${retrieveSlackTarget}m` : `dist ${distanceToAnchor.toFixed(1)}m > ${CLOSE_TO_ANCHOR_THRESHOLD}m`
-        console.log(`[AUTO-MOTOR] Retrieval: ${reason}, ramping motorForward`)
+        console.log(`[AUTO-MOTOR] Retrieval: slack ${slack.toFixed(2)}m < ${retrieveSlackTarget}m, ramping motorForward`)
       }
 
       setMotorThrottle(currentAutoThrottle)
 
-    } else if (slack !== undefined && slack > retrieveSlackTarget * 1.5 &&
-               (distanceToAnchor === null || distanceToAnchor <= CLOSE_TO_ANCHOR_THRESHOLD)) {
-      // Enough slack AND close to anchor - gradually reduce and stop motor
+    } else if (slack !== undefined && slack > retrieveSlackTarget * 1.5) {
+      // Enough slack - gradually reduce and stop motor
       const maxThrottleChange = throttleRampRate * dtSeconds
       currentAutoThrottle = Math.max(0, currentAutoThrottle - maxThrottleChange)
 
@@ -417,7 +425,7 @@ function updateAutoMotor(boatState, externalState) {
           setMotorThrottle(0)
           setForceEnabled('motor', false)
           currentAutoThrottle = 0
-          console.log(`[AUTO-MOTOR] Retrieval: slack ${slack.toFixed(2)}m sufficient, dist ${distanceToAnchor?.toFixed(1) || '?'}m, motor stopped`)
+          console.log(`[AUTO-MOTOR] Retrieval: slack ${slack.toFixed(2)}m sufficient, motor stopped`)
         }
       } else {
         setMotorThrottle(currentAutoThrottle)

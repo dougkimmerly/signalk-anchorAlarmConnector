@@ -61,6 +61,7 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 | `safety.md` | Timing constraints, failure modes, gotchas |
 | `domain.md` | SignalK paths, API endpoints, auth |
 | `patterns.md` | JS coding standards, SignalK patterns |
+| `signalk-guide.md` | SignalK API reference, units, paths |
 
 ## External Systems
 

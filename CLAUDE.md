@@ -8,60 +8,66 @@ Automation bridge between windlass chain counter and anchor alarm plugin. JavaSc
 
 ---
 
-## Shared Skills
-
-For SignalK development patterns, paths, and APIs, use the shared skills repo:
+## ⚠️ FIRST: Always Pull Before Checking Queue
 
 ```bash
-# CC: Clone once alongside your repos
-cd ~/dkSRC
-git clone git@github.com:dougkimmerly/claude-skills.git
-
-# Reference when working on SignalK code
-cat ~/dkSRC/claude-skills/signalk-expert/SKILL.md
-cat ~/dkSRC/claude-skills/signalk-expert/references/paths.md
+git pull
 ```
 
-| Skill | When to Use |
-|-------|-------------|
-| `signalk-expert` | Plugin development, SignalK paths, data models, APIs, unit conversions |
-
-**Skills repo:** [dougkimmerly/claude-skills](https://github.com/dougkimmerly/claude-skills)
+**Do this EVERY time you receive `msg` or check for tasks.** PM pushes tasks to GitHub - you won't see them without pulling first.
 
 ---
 
-## Message Queue Protocol (v2)
-
-For async PM ↔ CC communication, this repo uses file-per-message handoff:
+## Message Queue Protocol
 
 ```
 .claude/handoff/
-├── todo/           # Tasks waiting to be executed
+├── todo/           # Tasks waiting (CHECK AFTER GIT PULL)
 ├── complete/       # Completed tasks with responses
 └── archive/        # Archived tasks (monthly)
 ```
 
-### CC Workflow (`msg`)
+### CC Workflow
+
+1. **PULL FIRST** (critical - tasks come from PM via GitHub)
+   ```bash
+   git pull
+   ```
+
+2. **Check for tasks**
+   ```bash
+   ls .claude/handoff/todo/
+   ```
+
+3. **Execute task, write response**
+   ```bash
+   mkdir -p .claude/handoff/complete/TASK-NNN
+   mv .claude/handoff/todo/TASK-NNN-*.md .claude/handoff/complete/TASK-NNN/task.md
+   echo "# Response..." > .claude/handoff/complete/TASK-NNN/RESPONSE.md
+   ```
+
+4. **Push response**
+   ```bash
+   git add .claude/handoff/ && git commit -m "Complete TASK-NNN" && git push
+   ```
+
+---
+
+## Shared Skills
+
+For SignalK development patterns, load from shared skills repo:
 
 ```bash
-cd ~/dkSRC/signalk/signalk-anchorAlarmConnector
-git pull
-ls .claude/handoff/todo/           # Check for tasks
-# Execute task, then:
-mkdir -p .claude/handoff/complete/TASK-NNN
-mv .claude/handoff/todo/TASK-NNN-*.md .claude/handoff/complete/TASK-NNN/task.md
-# Write response
-echo "# Response..." > .claude/handoff/complete/TASK-NNN/RESPONSE.md
-git add .claude/handoff/ && git commit -m "Handoff: Complete TASK-NNN" && git push
+cat ~/dkSRC/claude-skills/signalk-expert/SKILL.md
+cat ~/dkSRC/claude-skills/skipper-expert/SKILL.md
 ```
 
-### PM GitHub Access
+| Skill | When to Use |
+|-------|-------------|
+| `signalk-expert` | Plugin development, paths, APIs, delta format |
+| `skipper-expert` | SKipper app UI, controls, layouts |
 
-| Field | Value |
-|-------|-------|
-| Owner | `dougkimmerly` |
-| Repo | `signalk-anchorAlarmConnector` |
-| Branch | `main` |
+**Skills repo:** [dougkimmerly/claude-skills](https://github.com/dougkimmerly/claude-skills)
 
 ---
 
@@ -105,33 +111,16 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 
 **Core flow**: Rode exceeds (depth + bowHeight) → auto drop → wait 120s → set alarm
 
-## Commands
-
-| Command | When to use |
-|---------|-------------|
-| `/implement` | Adding features, writing new code |
-| `/debug` | Diagnosing issues, analyzing logs |
-| `/review` | Code review, safety checks |
-| `/test` | Writing or running tests |
-
 ## Context Files
 
 > **Load as needed, not upfront.** Located in `.claude/context/`
 
 | File | Contains |
 |------|----------|
-| `architecture.md` | State machines, data flow, timing |
+| `architecture.md` | State machines, data flow, timing, dynamic subscriptions |
 | `safety.md` | Timing constraints, failure modes, gotchas |
 | `domain.md` | SignalK paths, API endpoints, auth |
 | `patterns.md` | JS coding standards, SignalK patterns |
-
-## External Systems
-
-| System | Purpose | Docs |
-|--------|---------|------|
-| SignalK Server | Data hub | [docs.signalk.org](https://demo.signalk.org/documentation/) |
-| Anchor Alarm Plugin | Alarm/map UI | [GitHub](https://github.com/sbender9/signalk-anchoralarm-plugin) |
-| Chain Counter | Hardware input | `../SensESP-chain-counter/` |
 
 ## Server Details
 

@@ -132,15 +132,24 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 
 ```bash
 # 1. SSH to server
-ssh skipper@192.168.20.55
+ssh doug@192.168.20.166
 
 # 2. Navigate to plugin directory
-cd ~/dkSRC/signalk/signalk-anchorAlarmConnector
+cd /home/doug/src/signalk-anchorAlarmConnector
 
-# 3. Pull latest changes
+# 3. Check for local changes
+git status
+
+# 4. Stash local changes if needed
+git stash
+
+# 5. Pull latest changes
 git pull
 
-# 4. DO NOT restart SignalK manually
+# 6. Restore local changes if needed
+git stash pop
+
+# 7. DO NOT restart SignalK manually
 # PM (orchestrator) manages service restarts
 ```
 
@@ -156,9 +165,10 @@ sudo journalctl -u signalk -f
 
 ### Server Details
 
-- **URL**: `http://192.168.20.55:3000`
-- **SSH**: `skipper@192.168.20.55`
-- **Plugin Path**: `~/dkSRC/signalk/signalk-anchorAlarmConnector`
+- **URL**: `http://192.168.20.166:3000`
+- **SSH**: `doug@192.168.20.166`
+- **Plugin Path**: `/home/doug/src/signalk-anchorAlarmConnector`
+- **Symlink**: `~/.signalk/node_modules/signalk-anchoralarmconnector` → `../../src/signalk-anchorAlarmConnector`
 - **Auth**: JWT Bearer tokens (admin/signalk)
 - **Plugin ID**: `signalk-anchoralarmconnector`
 - **Test mode**: Toggle in SignalK Plugin Config UI

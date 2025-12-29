@@ -96,7 +96,6 @@
 4. Plugin POSTs `setRodeLength` to update alarm radius
 5. Plugin calculates scope: `rodeDeployed / (anchorDepth + bowHeight)`
 6. Plugin publishes scope to `navigation.anchor.scope`
-7. Subscription period changes from 1000ms to 20000ms
 
 ### Anchor Raise Sequence
 
@@ -111,13 +110,13 @@
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | Startup delay | 3s | Allow SignalK paths to establish |
-| Active update period | 1000ms | When anchor moving |
-| Settled update period | 20000ms | When anchor set |
-| Settling timeout | 120s | Time before auto-set |
+| Active update period | 1000ms | Subscription period for rode/position |
+| Settling timeout | 120s | Time before auto-set (anchor alarm plugin) |
 | Drop debounce | 5s | Between drop commands |
 | Position freshness | 30s | For autoReady check |
 | Depth freshness | 30s | For autoReady check |
 | Counter freshness | 60s | For autoReady check |
+| Auto-clear check interval | 5s | Alarm monitoring frequency |
 
 ## Test Simulation Architecture
 

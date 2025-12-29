@@ -69,9 +69,10 @@ const total = depth + bowHeight
 ```javascript
 // Standard pattern for publishing SignalK values
 function sendChange(path, value) {
-    app.handleMessage('signalk-anchoralarmconnector', {
+    app.handleMessage(plugin.id, {
         context: 'vessels.self',
         updates: [{
+            $source: plugin.id,  // Use $source for proper attribution
             timestamp: new Date().toISOString(),
             values: [{ path, value }]
         }]

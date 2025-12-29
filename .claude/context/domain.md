@@ -26,6 +26,7 @@
 | `navigation.anchor.autoReady` | boolean | System health indicator |
 | `navigation.anchor.scope` | number | Calculated scope ratio |
 | `navigation.anchor.setAnchor` | boolean | Anchor alarm active state |
+| `navigation.anchor.tideAtDrop` | number | Tide height when anchor dropped (m) |
 
 ## Anchor Alarm Plugin API
 

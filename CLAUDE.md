@@ -122,9 +122,43 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 | `domain.md` | SignalK paths, API endpoints, auth |
 | `patterns.md` | JS coding standards, SignalK patterns |
 
-## Server Details
+## Deployment
+
+### Prerequisites
+- Be on same network as boat (192.168.20.0/24)
+- SSH access to SignalK server
+
+### Deploy Changes to Production
+
+```bash
+# 1. SSH to server
+ssh skipper@192.168.20.55
+
+# 2. Navigate to plugin directory
+cd ~/dkSRC/signalk/signalk-anchorAlarmConnector
+
+# 3. Pull latest changes
+git pull
+
+# 4. DO NOT restart SignalK manually
+# PM (orchestrator) manages service restarts
+```
+
+### Verify Deployment
+
+```bash
+# Check plugin is running
+sudo journalctl -u signalk --since "1 minute ago" | grep -i anchor
+
+# View SignalK logs
+sudo journalctl -u signalk -f
+```
+
+### Server Details
 
 - **URL**: `http://192.168.20.55:3000`
+- **SSH**: `skipper@192.168.20.55`
+- **Plugin Path**: `~/dkSRC/signalk/signalk-anchorAlarmConnector`
 - **Auth**: JWT Bearer tokens (admin/signalk)
 - **Plugin ID**: `signalk-anchoralarmconnector`
 - **Test mode**: Toggle in SignalK Plugin Config UI

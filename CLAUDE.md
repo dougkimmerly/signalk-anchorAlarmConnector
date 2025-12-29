@@ -1,5 +1,8 @@
 # SignalK Anchor Alarm Connector
 
+> **PM (Web Claude) - Start here:** Run `resp` to check for CC responses, then review this file.
+> **CC (Claude Code) - Start here:** Run `read CLAUDE.md` then `msg` to check tasks.
+
 ## Project Overview
 
 This is a SignalK plugin that creates an automation bridge between an anchor windlass chain counter and the [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin). It automatically manages anchor alarm activation/deactivation based on chain deployment activity.
@@ -7,6 +10,47 @@ This is a SignalK plugin that creates an automation bridge between an anchor win
 **Purpose**: Eliminate manual anchor alarm management by automatically setting/unsetting the alarm when the windlass deploys or retrieves anchor rode.
 
 **Repository**: https://github.com/dougkimmerly/signalk-anchorAlarmConnector
+
+## PM GitHub Access
+
+**Repo:** `dougkimmerly/signalk-anchorAlarmConnector`
+**Owner:** dougkimmerly
+
+| What | GitHub Path |
+|------|-------------|
+| This file | `CLAUDE.md` |
+| Task queue (v2) | `.claude/handoff/todo/` |
+| In-process (v2) | `.claude/handoff/in-process/` |
+| Responses (v2) | `.claude/handoff/complete/` |
+| Archive (v2) | `.claude/handoff/archive/` |
+
+## Message Queue Protocol
+
+**Version:** v2 (file-per-message)
+
+**v2 Workflow:**
+- PM queues: Create file in `.claude/handoff/todo/TASK-XXX-description.md`
+- CC executes: Moves todo → in-process → complete with response
+- PM checks: List `.claude/handoff/complete/` for responses
+
+| Command | Role | Action |
+|---------|------|--------|
+| `msg` | CC | Pull → execute task → write response → push |
+| `resp` | PM | Fetch → check responses → archive → queue tasks |
+
+See `.claude/commands/resp.md` for full PM protocol.
+See `.claude/commands/msg.md` for full CC protocol.
+
+## Commands
+
+| Command | When to use |
+|---------|-------------|
+| `/implement` | Adding features, writing new code |
+| `/debug` | Diagnosing issues, analyzing logs |
+| `/review` | Code review, safety checks |
+| `/test` | Writing or running tests |
+| `/msg` | **CC only:** Check task queue, execute tasks |
+| `/resp` | **PM only:** Check responses, queue tasks |
 
 ## Directory Structure
 

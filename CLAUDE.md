@@ -8,6 +8,28 @@ Automation bridge between windlass chain counter and anchor alarm plugin. JavaSc
 
 ---
 
+## Shared Skills
+
+For SignalK development patterns, paths, and APIs, use the shared skills repo:
+
+```bash
+# CC: Clone once alongside your repos
+cd ~/dkSRC
+git clone git@github.com:dougkimmerly/claude-skills.git
+
+# Reference when working on SignalK code
+cat ~/dkSRC/claude-skills/signalk-expert/SKILL.md
+cat ~/dkSRC/claude-skills/signalk-expert/references/paths.md
+```
+
+| Skill | When to Use |
+|-------|-------------|
+| `signalk-expert` | Plugin development, SignalK paths, data models, APIs, unit conversions |
+
+**Skills repo:** [dougkimmerly/claude-skills](https://github.com/dougkimmerly/claude-skills)
+
+---
+
 ## Central Message Hub
 
 This repo uses the central hub in signalk55 for PM-CC coordination.
@@ -86,7 +108,6 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 | `safety.md` | Timing constraints, failure modes, gotchas |
 | `domain.md` | SignalK paths, API endpoints, auth |
 | `patterns.md` | JS coding standards, SignalK patterns |
-| `signalk-guide.md` | SignalK API reference, units, paths |
 
 ## External Systems
 

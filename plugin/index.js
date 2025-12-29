@@ -24,6 +24,10 @@ let lastDropCommandTime = 0
 let tideAtDrop = null      // Tide height when anchor was dropped
 let currentTide = 0        // Current tide height
 
+// Subscription mode tracking
+let subscriptionMode = 'active'  // 'active' or 'stable'
+let anchorSettled = false        // True when anchor has been stable for 120s
+
 // Auto-clear alarm variables
 let alarmClearInterval = null
 let safeZoneCounter = 0
@@ -83,175 +87,8 @@ module.exports = (app) => {
             sendChange('navigation.anchor.scope', 0)
             sendChange('navigation.anchor.setAnchor', false)
 
-            app.subscriptionmanager.subscribe(
-                {
-                    context: 'vessels.self',
-                    subscribe: [
-                        {
-                            path: 'navigation.anchor.rodeDeployed',
-                            period: 1000,
-                        },
-                        {
-                            path: 'navigation.anchor.position',
-                            period: activeUpdates,
-                        },
-                        {
-                            path: 'navigation.anchor.rodeLength',
-                            period: activeUpdates,
-                        },
-                        {
-                            path: 'environment.depth.belowSurface',
-                            period: activeUpdates,
-                        },
-                        { path: 'navigation.position', period: 15000 },
-                        { path: 'navigation.anchor.command', period: 15000 },
-                        {
-                            path: 'navigation.anchor.distanceFromBow',
-                            period: activeUpdates,
-                        },
-                        {
-                            path: 'notifications.navigation.anchor',
-                            period: 1000,
-                        },
-                        {
-                            path: 'navigation.anchor.maxRadius',
-                            period: 1000,
-                        },
-                        {
-                            path: 'environment.tide.heightNow',
-                            period: 60000,  // Tide changes slowly
-                        },
-                    ],
-                },
-                unsubscribes,
-                (err) => {
-                    app.error('Subscription error:', err)
-                },
-                (delta) => {
-                    delta.updates.forEach((update) => {
-                        update.values?.forEach((v) => {
-                            const path = v.path
-                            const value = v.value
-                            const updateTime = new Date(
-                                update.timestamp
-                            ).getTime()
-                            if (path === 'navigation.anchor.rodeDeployed') {
-                                let previousRode = rodeDeployed
-                                let newRode = value
-                                app.debug(
-                                    'newRode',
-                                    value,
-                                    ' previousRode',
-                                    previousRode,
-                                    ' depth',
-                                    depth,
-                                    ' anchorDropped',
-                                    anchorDropped
-                                )
-                                if (
-                                    newRode > previousRode &&
-                                    newRode > depth + bowHeight &&
-                                    !anchorDropped &&
-                                    Date.now() - lastDropCommandTime > 5000
-                                ) {
-                                    sendAnchorCommand('dropAnchor')
-                                    lastDropCommandTime = Date.now()
-                                    // Record tide height at anchor drop
-                                    tideAtDrop = currentTide
-                                    sendChange('navigation.anchor.tideAtDrop', tideAtDrop)
-                                    console.log(`[Anchor Drop] Tide at drop: ${tideAtDrop}m`)
-                                }
-                                if (
-                                    newRode < previousRode &&
-                                    anchorDropped &&
-                                    newRode < depth + bowHeight
-                                ) {
-                                    sendAnchorCommand('raiseAnchor')
-                                    sendChange('navigation.anchor.scope', 0)
-                                    // Clear tide at drop when anchor raised
-                                    tideAtDrop = null
-                                    sendChange('navigation.anchor.tideAtDrop', null)
-                                    console.log('[Anchor Raise] Cleared tideAtDrop')
-                                }
-                                rodeDeployed = newRode
-
-                                // Calculate and publish scope when we have valid anchor position
-                                const anchorPos = app.getSelfPath('navigation.anchor.position')
-                                if (anchorPos?.value?.altitude !== undefined && rodeDeployed > 0) {
-                                    const anchorDepthAtDrop = Math.abs(anchorPos.value.altitude)
-                                    // Effective anchor depth adjusts for tide change since drop
-                                    // effectiveDepth = depthAtDrop - tideAtDrop + currentTide
-                                    let effectiveAnchorDepth = anchorDepthAtDrop
-                                    if (tideAtDrop !== null) {
-                                        effectiveAnchorDepth = anchorDepthAtDrop - tideAtDrop + currentTide
-                                    }
-                                    // Scope = rode length / (effective depth + bow height)
-                                    // bowHeight accounts for height of bow roller above water
-                                    const scope = rodeDeployed / (effectiveAnchorDepth + bowHeight)
-                                    if (isValidNumber(scope) && scope > 0) {
-                                        sendChange('navigation.anchor.scope', scope)
-                                    }
-                                }
-                            } else if (path === 'navigation.anchor.position') {
-                                anchorDropped = value != null
-
-                                // Calculate and publish scope when anchor position changes
-                                if (value?.altitude !== undefined && rodeDeployed > 0) {
-                                    const anchorDepthAtDrop = Math.abs(value.altitude)
-                                    // Effective anchor depth adjusts for tide change since drop
-                                    let effectiveAnchorDepth = anchorDepthAtDrop
-                                    if (tideAtDrop !== null) {
-                                        effectiveAnchorDepth = anchorDepthAtDrop - tideAtDrop + currentTide
-                                    }
-                                    const scope = rodeDeployed / (effectiveAnchorDepth + bowHeight)
-                                    if (isValidNumber(scope) && scope > 0) {
-                                        sendChange('navigation.anchor.scope', scope)
-                                    }
-                                } else if (value === null) {
-                                    // Anchor raised - clear scope
-                                    sendChange('navigation.anchor.scope', 0)
-                                }
-                            } else if (
-                                path === 'navigation.anchor.rodeLength'
-                            ) {
-                                rodeLength = value
-                            } else if (
-                                path === 'environment.depth.belowSurface'
-                            ) {
-                                depth = value
-                                lastDepth = updateTime
-                            } else if (path === 'navigation.position') {
-                                lastPosition = updateTime
-                            } else if (path === 'navigation.anchor.command') {
-                                lastCounterConnection = updateTime
-                            } else if (path === 'notifications.navigation.anchor') {
-                                // Handle alarm notification changes
-                                handleAlarmNotification(value)
-                            } else if (path === 'navigation.anchor.maxRadius') {
-                                // Update setAnchor based on maxRadius validity
-                                // When maxRadius is a valid number, anchor alarm is set
-                                // When maxRadius is null/undefined, anchor alarm is not set
-                                const isAnchorSet = value !== null && value !== undefined && !isNaN(value) && value > 0
-                                sendChange('navigation.anchor.setAnchor', isAnchorSet)
-                                console.log(`[maxRadius] ${value} -> setAnchor: ${isAnchorSet}`)
-                            } else if (path === 'environment.tide.heightNow') {
-                                // Track current tide height
-                                currentTide = value || 0
-                            }
-
-                            if (
-                                lastPosition > Date.now() - 30000 &&
-                                lastDepth > Date.now() - 30000 &&
-                                lastCounterConnection > Date.now() - 60000
-                            ) {
-                                sendChange('navigation.anchor.autoReady', true)
-                            } else {
-                                sendChange('navigation.anchor.autoReady', false)
-                            }
-                        })
-                    })
-                }
-            )
+            // Start in active mode with 1s updates
+            setupSubscriptions(1000)
 
             // Register HTTP router if available
             if (app.registerPluginWithRouter) {
@@ -278,6 +115,10 @@ module.exports = (app) => {
         stop: () => {
             unsubscribes.forEach((f) => f())
             unsubscribes = []
+
+            // Reset subscription mode state
+            subscriptionMode = 'active'
+            anchorSettled = false
 
             // Stop alarm auto-clear monitoring
             stopAlarmClearMonitoring()
@@ -342,11 +183,12 @@ module.exports = (app) => {
         }
 
         app.handleMessage(
-            'netmonitor',
+            plugin.id,
             {
                 context: 'vessels.self',
                 updates: [
                     {
+                        $source: plugin.id,
                         timestamp: new Date().toISOString(),
                         values: [
                             {
@@ -398,6 +240,234 @@ module.exports = (app) => {
     }
     function isValidNumber(x) {
         return typeof x === 'number' && !isNaN(x) && isFinite(x)
+    }
+
+    // Dynamic subscription mode functions
+    function setupSubscriptions(period) {
+        const subscription = {
+            context: 'vessels.self',
+            subscribe: [
+                {
+                    path: 'navigation.anchor.rodeDeployed',
+                    period: period,
+                },
+                {
+                    path: 'navigation.anchor.position',
+                    period: period,
+                },
+                {
+                    path: 'navigation.anchor.rodeLength',
+                    period: period,
+                },
+                {
+                    path: 'environment.depth.belowSurface',
+                    period: period,
+                },
+                { path: 'navigation.position', period: period },
+                { path: 'navigation.anchor.command', period: period },
+                {
+                    path: 'navigation.anchor.distanceFromBow',
+                    period: period,
+                },
+                {
+                    path: 'notifications.navigation.anchor',
+                    period: 1000,  // Always keep alarms at 1s for responsiveness
+                },
+                {
+                    path: 'navigation.anchor.maxRadius',
+                    period: 1000,  // Always keep maxRadius at 1s
+                },
+                {
+                    path: 'environment.tide.heightNow',
+                    period: 60000,  // Tide changes slowly, always 60s
+                },
+            ],
+        }
+
+        app.subscriptionmanager.subscribe(
+            subscription,
+            unsubscribes,
+            (err) => {
+                app.error('Subscription error:', err)
+            },
+            (delta) => {
+                delta.updates.forEach((update) => {
+                    update.values?.forEach((v) => {
+                        const path = v.path
+                        const value = v.value
+                        const updateTime = new Date(
+                            update.timestamp
+                        ).getTime()
+                        if (path === 'navigation.anchor.rodeDeployed') {
+                            let previousRode = rodeDeployed
+                            let newRode = value
+                            app.debug(
+                                'newRode',
+                                value,
+                                ' previousRode',
+                                previousRode,
+                                ' depth',
+                                depth,
+                                ' anchorDropped',
+                                anchorDropped
+                            )
+
+                            // If rode is changing, ensure we're in active mode
+                            if (Math.abs(newRode - previousRode) > 0.1) {
+                                switchToActiveMode()
+                                anchorSettled = false
+                            }
+
+                            if (
+                                newRode > previousRode &&
+                                newRode > depth + bowHeight &&
+                                !anchorDropped &&
+                                Date.now() - lastDropCommandTime > 5000
+                            ) {
+                                sendAnchorCommand('dropAnchor')
+                                lastDropCommandTime = Date.now()
+                                // Record tide height at anchor drop
+                                tideAtDrop = currentTide
+                                sendChange('navigation.anchor.tideAtDrop', tideAtDrop)
+                                console.log(`[Anchor Drop] Tide at drop: ${tideAtDrop}m`)
+                            }
+                            if (
+                                newRode < previousRode &&
+                                anchorDropped &&
+                                newRode < depth + bowHeight
+                            ) {
+                                sendAnchorCommand('raiseAnchor')
+                                sendChange('navigation.anchor.scope', 0)
+                                // Clear tide at drop when anchor raised
+                                tideAtDrop = null
+                                sendChange('navigation.anchor.tideAtDrop', null)
+                                console.log('[Anchor Raise] Cleared tideAtDrop')
+                                // Switch back to active mode
+                                switchToActiveMode()
+                                anchorSettled = false
+                            }
+                            rodeDeployed = newRode
+
+                            // Calculate and publish scope when we have valid anchor position
+                            const anchorPos = app.getSelfPath('navigation.anchor.position')
+                            if (anchorPos?.value?.altitude !== undefined && rodeDeployed > 0) {
+                                const anchorDepthAtDrop = Math.abs(anchorPos.value.altitude)
+                                // Effective anchor depth adjusts for tide change since drop
+                                // effectiveDepth = depthAtDrop - tideAtDrop + currentTide
+                                let effectiveAnchorDepth = anchorDepthAtDrop
+                                if (tideAtDrop !== null) {
+                                    effectiveAnchorDepth = anchorDepthAtDrop - tideAtDrop + currentTide
+                                }
+                                // Scope = rode length / (effective depth + bow height)
+                                // bowHeight accounts for height of bow roller above water
+                                const scope = rodeDeployed / (effectiveAnchorDepth + bowHeight)
+                                if (isValidNumber(scope) && scope > 0) {
+                                    sendChange('navigation.anchor.scope', scope)
+                                }
+                            }
+                        } else if (path === 'navigation.anchor.position') {
+                            anchorDropped = value != null
+
+                            // Calculate and publish scope when anchor position changes
+                            if (value?.altitude !== undefined && rodeDeployed > 0) {
+                                const anchorDepthAtDrop = Math.abs(value.altitude)
+                                // Effective anchor depth adjusts for tide change since drop
+                                let effectiveAnchorDepth = anchorDepthAtDrop
+                                if (tideAtDrop !== null) {
+                                    effectiveAnchorDepth = anchorDepthAtDrop - tideAtDrop + currentTide
+                                }
+                                const scope = rodeDeployed / (effectiveAnchorDepth + bowHeight)
+                                if (isValidNumber(scope) && scope > 0) {
+                                    sendChange('navigation.anchor.scope', scope)
+                                }
+                            } else if (value === null) {
+                                // Anchor raised - clear scope
+                                sendChange('navigation.anchor.scope', 0)
+                            }
+                        } else if (
+                            path === 'navigation.anchor.rodeLength'
+                        ) {
+                            rodeLength = value
+                        } else if (
+                            path === 'environment.depth.belowSurface'
+                        ) {
+                            depth = value
+                            lastDepth = updateTime
+                        } else if (path === 'navigation.position') {
+                            lastPosition = updateTime
+                        } else if (path === 'navigation.anchor.command') {
+                            lastCounterConnection = updateTime
+                        } else if (path === 'notifications.navigation.anchor') {
+                            // Handle alarm notification changes
+                            handleAlarmNotification(value)
+                        } else if (path === 'navigation.anchor.maxRadius') {
+                            // Update setAnchor based on maxRadius validity
+                            // When maxRadius is a valid number, anchor alarm is set
+                            // When maxRadius is null/undefined, anchor alarm is not set
+                            const isAnchorSet = value !== null && value !== undefined && !isNaN(value) && value > 0
+                            sendChange('navigation.anchor.setAnchor', isAnchorSet)
+                            console.log(`[maxRadius] ${value} -> setAnchor: ${isAnchorSet}`)
+
+                            // When anchor alarm is set (maxRadius becomes valid), mark as settled
+                            // and switch to stable mode after a short delay
+                            if (isAnchorSet && !anchorSettled) {
+                                console.log('[Anchor Settled] Alarm set, will switch to stable mode')
+                                anchorSettled = true
+                                // Switch to stable mode after 5 seconds
+                                setTimeout(() => {
+                                    if (anchorSettled && anchorDropped) {
+                                        switchToStableMode()
+                                    }
+                                }, 5000)
+                            }
+                        } else if (path === 'environment.tide.heightNow') {
+                            // Track current tide height
+                            currentTide = value || 0
+                        }
+
+                        if (
+                            lastPosition > Date.now() - 30000 &&
+                            lastDepth > Date.now() - 30000 &&
+                            lastCounterConnection > Date.now() - 60000
+                        ) {
+                            sendChange('navigation.anchor.autoReady', true)
+                        } else {
+                            sendChange('navigation.anchor.autoReady', false)
+                        }
+                    })
+                })
+            }
+        )
+    }
+
+    function switchToStableMode() {
+        if (subscriptionMode === 'stable') return
+
+        console.log('[Subscription Mode] Switching to stable mode - 60s polling')
+
+        // Unsubscribe from current subscriptions
+        unsubscribes.forEach(f => f())
+        unsubscribes = []
+
+        // Re-subscribe with 60 second period
+        setupSubscriptions(60000)
+
+        subscriptionMode = 'stable'
+    }
+
+    function switchToActiveMode() {
+        if (subscriptionMode === 'active') return
+
+        console.log('[Subscription Mode] Switching to active mode - 1s polling')
+
+        // Unsubscribe from current subscriptions
+        unsubscribes.forEach(f => f())
+        unsubscribes = []
+
+        // Re-subscribe with 1 second period
+        setupSubscriptions(1000)
+
+        subscriptionMode = 'active'
     }
 
     // Auto-clear alarm functions
@@ -484,7 +554,7 @@ module.exports = (app) => {
         }
     }
 
-    async function clearAlarmNotification() {
+    function clearAlarmNotification() {
         try {
             console.log('Clearing anchor alarm notification to normal state')
 

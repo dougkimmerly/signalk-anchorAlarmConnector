@@ -4,7 +4,7 @@
   "description": "connection between an anchor windlass controller and an anchor alarm",
   "keywords": [
     "signalk-node-server-plugin",
-    "signalk-category-ais"
+    "signalk-category-navigation"
   ],
   "signalk-plugin-enabled-by-default": false,
   "signalk": {

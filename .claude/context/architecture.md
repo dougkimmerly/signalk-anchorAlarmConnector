@@ -110,13 +110,34 @@
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | Startup delay | 3s | Allow SignalK paths to establish |
-| Active update period | 1000ms | Subscription period for rode/position |
+| Active update period | 1000ms | Subscription period when chain moving |
+| Stable update period | 60000ms | Subscription period when anchor settled |
 | Settling timeout | 120s | Time before auto-set (anchor alarm plugin) |
+| Mode switch delay | 5s | Delay before switching to stable mode |
 | Drop debounce | 5s | Between drop commands |
 | Position freshness | 30s | For autoReady check |
 | Depth freshness | 30s | For autoReady check |
 | Counter freshness | 60s | For autoReady check |
 | Auto-clear check interval | 5s | Alarm monitoring frequency |
+
+## Dynamic Subscription Modes
+
+The plugin uses two subscription modes to optimize CPU usage:
+
+**Active Mode** (1s updates)
+- Enabled during anchor drop, settling, and raising
+- Triggered when rode deployed changes > 0.1m
+- High-frequency monitoring for responsive automation
+
+**Stable Mode** (60s updates)
+- Enabled after anchor alarm is set (120s settling complete)
+- Slow polling when boat at anchor and stable
+- Reduces CPU usage by ~98% during anchoring
+- Alarm and maxRadius paths always remain at 1s for responsiveness
+
+**Mode Transitions:**
+- Active → Stable: 5s after maxRadius becomes valid (alarm set)
+- Stable → Active: When rode deployed changes or anchor is raised
 
 ## Test Simulation Architecture
 

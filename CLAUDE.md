@@ -30,21 +30,38 @@ cat ~/dkSRC/claude-skills/signalk-expert/references/paths.md
 
 ---
 
-## Central Message Hub
+## Message Queue Protocol (v2)
 
-This repo uses the central hub in signalk55 for PM-CC coordination.
+For async PM ↔ CC communication, this repo uses file-per-message handoff:
 
-| Location | Purpose |
-|----------|--------|
-| `signalk55/.claude/hub/task-queue.md` | Tasks tagged `[signalk-anchorAlarmConnector]` |
-| `signalk55/.claude/hub/response-queue.md` | Responses tagged `[signalk-anchorAlarmConnector]` |
+```
+.claude/handoff/
+├── todo/           # Tasks waiting to be executed
+├── complete/       # Completed tasks with responses
+└── archive/        # Archived tasks (monthly)
+```
 
-### CC Workflow
+### CC Workflow (`msg`)
+
 ```bash
 cd ~/dkSRC/signalk/signalk-anchorAlarmConnector
-claude
-/msg
+git pull
+ls .claude/handoff/todo/           # Check for tasks
+# Execute task, then:
+mkdir -p .claude/handoff/complete/TASK-NNN
+mv .claude/handoff/todo/TASK-NNN-*.md .claude/handoff/complete/TASK-NNN/task.md
+# Write response
+echo "# Response..." > .claude/handoff/complete/TASK-NNN/RESPONSE.md
+git add .claude/handoff/ && git commit -m "Handoff: Complete TASK-NNN" && git push
 ```
+
+### PM GitHub Access
+
+| Field | Value |
+|-------|-------|
+| Owner | `dougkimmerly` |
+| Repo | `signalk-anchorAlarmConnector` |
+| Branch | `main` |
 
 ---
 
@@ -92,7 +109,6 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 
 | Command | When to use |
 |---------|-------------|
-| `/msg` | Get tasks from signalk55 hub |
 | `/implement` | Adding features, writing new code |
 | `/debug` | Diagnosing issues, analyzing logs |
 | `/review` | Code review, safety checks |

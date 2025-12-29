@@ -13,17 +13,31 @@ Handle all Python code modifications in the validation framework autonomously. Y
 
 ## Scope
 
+**CRITICAL: See `validation/FOLDER_SCHEMA.md` for complete directory structure reference.**
+
 **Files you work with:**
-- `validation/scripts/*.py` - Main test scripts
+- `validation/scripts/*.py` - Main test scripts and runners
 - `validation/utils/*.py` - Shared utilities
-- `validation/analysis/*.py` - Analysis tools
+- `validation/analysis/*.py` - Reusable analysis tools
+
+**CRITICAL: Follow Validation Framework Structure**
+
+When creating new files, use the proper directory:
+- Test runners/harnesses → `validation/scripts/`
+- Reusable analysis tools → `validation/analysis/`
+- Shared utilities (auth, API helpers) → `validation/utils/`
+- **NEVER** create Python files in `validation/` root directory
+
+**Data Paths:**
+- Read test data from `validation/data/overnight_tests_*/`
+- Write reports to `validation/results/` (NOT in analysis/ or data/ folders)
 
 **Common tasks:**
 - Add new data collection functions
 - Modify test logic and conditions
 - Update timeout calculations
 - Fix bugs in test runners
-- Add new analysis tools
+- Add new analysis tools to `validation/analysis/`
 
 ## Guidelines
 

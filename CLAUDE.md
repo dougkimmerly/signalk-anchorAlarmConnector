@@ -71,6 +71,19 @@ cd test/scripts && python3 overnight_test_runner.py
 cd test/scripts && python3 quick_validation_test.py
 ```
 
+## ⚠️ CRITICAL SIMULATION CONCEPTS
+
+**ALWAYS REMEMBER**: During anchor deployment, the chain controller waits for the boat to move farther away before deploying more chain.
+
+### Chain Deployment Physics
+- **Deployment**: Boat moves AWAY from anchor → chain follows → motor BACKWARD helps boat move away
+- **Negative slack during deployment** = Boat is TOO FAR away (chain fully extended)
+  - Motor BACKWARD would make it worse
+  - Motor must STOP and wait for boat to drift closer naturally
+- **Retrieval**: Boat moves TOWARD anchor → chain follows → motor FORWARD helps boat move closer
+
+See [docs/SIMULATION_DOCUMENTATION.md](docs/SIMULATION_DOCUMENTATION.md) for complete physics details.
+
 ## How It Works
 
 ### Automatic Anchor Drop Detection

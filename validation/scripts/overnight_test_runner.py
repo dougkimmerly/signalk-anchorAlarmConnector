@@ -20,7 +20,7 @@ import statistics
 # Configuration
 BASE_URL = "http://localhost:80"
 SCRIPTS_DIR = Path(__file__).parent  # Directory containing this script
-TEST_DIR = SCRIPTS_DIR.parent  # Parent test/ directory
+TEST_DIR = SCRIPTS_DIR.parent / 'data'  # validation/data/ directory
 SESSION_DIR = None
 PROGRESS_FILE = None
 TEST_LOG = None
@@ -429,6 +429,35 @@ def send_command(token, command):
     except Exception as e:
         return {'error': str(e)}
 
+def send_test_notification(token, test_num, total_tests, test_type, wind_kn, depth_m):
+    """Send test notification to chain controller via navigation.anchor.command"""
+    target_rode = 2.0 if test_type == 'autoRetrieve' else depth_m * 5.0
+
+    # Create a string value for the command
+    notification_str = f"testNotification:test{test_num}/{total_tests}:{test_type}:{wind_kn}kn:{depth_m}m:target{target_rode}m"
+
+    notification = {
+        "value": notification_str
+    }
+
+    url = f"{BASE_URL}/signalk/v1/api/vessels/self/navigation/anchor/command"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        req = urllib.request.Request(url,
+                                     data=json.dumps(notification).encode('utf-8'),
+                                     headers=headers,
+                                     method='PUT')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            log_test(f"  ✓ Test notification sent to chain controller")
+            return True
+    except Exception as e:
+        log_test(f"  ⚠ Warning: Could not send test notification: {e}")
+        return False
+
 def collect_sample(token, start_pos, start_lat, start_lon, start_time):
     """Collect single telemetry sample"""
     try:
@@ -535,6 +564,10 @@ def run_test(test_num, wind_speed, depth, test_type):
     else:
         time.sleep(1)  # Allow config to stabilize
         log_test(f'✓ Environment configured (simulation NOT reset to preserve deployed rode)')
+
+    # Send test notification to chain controller
+    send_test_notification(token, test_num, total_tests, test_type, wind_speed, depth)
+    time.sleep(1)  # Give chain controller 1 second to see notification
 
     # Phase 3: Run test
     log_test(f'[PHASE 3] Running {test_type} test...')

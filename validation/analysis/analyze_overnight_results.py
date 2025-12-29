@@ -23,7 +23,7 @@ METERS_TO_LAT = 0.000009
 METERS_TO_LON = 0.0000125
 
 # Directory containing test framework (parent of analysis/)
-TEST_DIR = Path(__file__).parent.parent
+TEST_DIR = Path(__file__).parent.parent / 'data'
 
 
 def find_session_dir():

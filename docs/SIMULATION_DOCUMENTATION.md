@@ -1,5 +1,24 @@
 # Anchor Deployment Simulation - Documentation
 
+## ⚠️ CRITICAL CONCEPTS - READ FIRST
+
+### Chain Deployment Physics (The Chain Controller Waits for Distance)
+
+**During DEPLOYMENT (autoDrop):**
+1. **Chain waits for boat to move AWAY** - The chain controller CANNOT deploy more chain until the boat moves farther away from the anchor
+2. **Negative slack = BOAT TOO FAR** - If slack is negative, the boat has moved away TOO FAST, chain is fully extended
+3. **Motor BACKWARD = Push boat AWAY** - During deployment, motor backward assists boat moving away from anchor
+4. **If slack is negative during deployment**: Motor must STOP backward thrust (or the boat gets even farther away, making problem worse)
+
+**During RETRIEVAL (autoRetrieve):**
+1. **Chain waits for boat to move CLOSER** - The windlass pulls chain up as the boat moves toward the anchor
+2. **Motor FORWARD = Push boat TOWARD** - Motor forward assists boat moving toward anchor
+3. **Need positive slack** - Windlass needs slack to lift chain without fighting boat weight
+
+**THE KEY RULE**:
+- Deployment: Boat moves AWAY → chain follows → motor BACKWARD helps boat move away
+- Retrieval: Boat moves TOWARD → chain follows → motor FORWARD helps boat move closer
+
 ## Overview
 
 This is a physics-based simulation for testing anchor deployment behavior in SignalK. The simulator models wind-driven boat movement during anchor deployment, where anchor chain deploys as the boat drifts away from the anchor point due to wind forces.
@@ -118,8 +137,10 @@ if (boatSpeed < targetSpeed) {
 **Why This Works**:
 - **High slack** (chain piling up) → Motor increases target speed → More backward thrust → Boat moves away faster
 - **Low slack** (chain tight) → Motor decreases target speed → Less backward thrust → Boat slows down
-- **Negative slack** → Motor stops completely → Boat slows, chain catches up
+- **Negative slack** → Motor STOPS backward thrust → Boat drifts naturally → Chain controller waits for boat to come closer OR deploys when boat drifts farther
 - Creates automatic feedback loop maintaining 1-3m slack
+
+**CRITICAL**: Negative slack during deployment means boat is TOO FAR away (not too close). Motor backward would make this worse. We must stop motor and let natural forces (wind, drag) bring boat to correct distance.
 
 **Retrieval Motor Logic**:
 ```javascript

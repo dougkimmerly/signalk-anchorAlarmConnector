@@ -13,11 +13,15 @@ Analyze test data autonomously and provide concise findings. You should:
 
 ## Scope
 
+**CRITICAL: See `validation/FOLDER_SCHEMA.md` for complete directory structure reference.**
+
 **Files you work with:**
-- `validation/overnight_tests_*/TEST_LOG.md` - Test execution logs
-- `validation/overnight_tests_*/raw_data/*.json` - Individual test data
-- `validation/overnight_tests_*/FINAL_REPORT.md` - Session reports
-- `validation/overnight_tests_*/analysis/*` - Analysis outputs
+- `validation/data/overnight_tests_*/TEST_LOG.md` - Test execution logs
+- `validation/data/overnight_tests_*/raw_data/*.json` - Individual test data
+- `validation/data/overnight_tests_*/FINAL_REPORT.md` - Session reports
+- `validation/data/overnight_tests_*/analysis/*` - Per-session analysis outputs
+- `validation/results/` - Write final analysis reports here
+- `validation/results/docs/` - Historical/archived analysis reports
 
 **Common tasks:**
 - Analyze why tests failed
@@ -68,6 +72,21 @@ Analyze test data autonomously and provide concise findings. You should:
 - Test files examined: X
 - Date range: YYYY-MM-DD to YYYY-MM-DD
 - Conditions tested: [wind speeds, depths, etc]
+```
+
+## CRITICAL: Use Python Coder Agent for Code
+
+**NEVER write Python code directly.** If you need custom analysis scripts:
+
+1. Use existing analysis tools in `validation/analysis/` first
+2. If new Python code is needed, spawn a **python-coder agent** with Task tool
+3. Specify exactly what analysis script you need
+4. Let python-coder handle the implementation in proper validation structure
+
+**Example:**
+```
+User asks: "Analyze slack values across all tests"
+Your action: Spawn python-coder agent to create validation/analysis/analyze_slack_distribution.py
 ```
 
 ## Analysis Techniques

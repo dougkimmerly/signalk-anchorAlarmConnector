@@ -184,7 +184,7 @@ def main():
         print('  python3 overnight_test_runner.py')
         print()
         print('Monitor progress with:')
-        print(f'  tail -f {TEST_DIR}/overnight_tests_YYYYMMDD/TEST_LOG.md')
+        print(f'  tail -f {TEST_DIR.parent}/data/overnight_tests_YYYYMMDD_HHMMSS/TEST_LOG.md')
         return 0
     else:
         print('✗ Fix issues above before starting tests')

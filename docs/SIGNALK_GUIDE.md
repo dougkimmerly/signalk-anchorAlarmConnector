@@ -462,6 +462,252 @@ app.registerPutHandler('plugins.myapp.config.threshold', (context, path, value, 
 
 ---
 
+## SensESP PUT Request Handlers (ESP32 Devices)
+
+SensESP is a framework for ESP32 devices that enables them to integrate with SignalK. This section covers how PUT request handlers work when using ESP32 devices with SensESP.
+
+### Architecture Overview
+
+There are **two distinct but complementary systems** for PUT request handling:
+
+1. **Server-side PUT handlers** - Registered on SignalK server (plugins, Node-RED)
+2. **Device-side PUT listeners** - Registered on ESP32 devices running SensESP
+
+### How Device PUT Routing Works
+
+**Communication Flow:**
+
+1. **Device Registration**: ESP32 connects to SignalK server via WebSocket and announces presence through mDNS
+2. **Listener Registration**: Device registers `SKPutRequestListener` objects for specific paths
+3. **PUT Request Reception**: When server receives a PUT for that path, it forwards through WebSocket
+4. **Request Matching**: WebSocket client's `on_receive_put()` matches incoming paths to registered listeners
+5. **Handler Execution**: Matching requests are queued and processed by appropriate listener callback
+6. **Response**: Device sends back success (HTTP 200) or failure (HTTP 405) through WebSocket
+
+**Important**: PUT commands are **not automatically intercepted** - both server plugins and devices must explicitly register handlers for paths they want to handle.
+
+```
+Client → PUT to SignalK Server → WebSocket → ESP32 SKPutRequestListener → Response
+```
+
+### SensESP PUT Listener Example
+
+```cpp
+#include "sensesp.h"
+#include "signalk_put_request_listener.h"
+
+// Register a listener for anchor light control
+auto anchor_light_listener = std::make_shared<SKPutRequestListener>(
+    "electrical.switches.anchorLight.state",  // SignalK path to listen on
+    [](JsonObject& request) {                 // Callback when PUT received
+        bool state = request["value"];
+
+        // Control the actual hardware
+        digitalWrite(ANCHOR_LIGHT_PIN, state ? HIGH : LOW);
+
+        // Optionally publish updated state back to SignalK
+        anchor_light_state->set(state);
+
+        return true;  // Return true for success, false for failure
+    }
+);
+
+// The listener is automatically registered with the SignalK WebSocket client
+```
+
+### Direct HTTP PUT to ESP32
+
+You can also implement **direct HTTP PUT handlers** on the ESP32's local HTTP server for standalone control:
+
+```cpp
+#include "sensesp/net/http_server.h"
+
+auto server = sensesp_app->get_http_server();
+
+// Add custom HTTP PUT endpoint
+auto put_handler = std::make_shared<HTTPRequestHandler>(
+    1 << HTTP_PUT,              // Method mask for PUT
+    "/api/relay/1",             // URI path
+    [](httpd_req_t* req) {
+        // Read request body
+        char buf[100];
+        int ret = httpd_req_recv(req, buf, sizeof(buf));
+
+        if (ret <= 0) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid body");
+            return ESP_FAIL;
+        }
+
+        // Parse JSON and control relay
+        DynamicJsonDocument doc(200);
+        deserializeJson(doc, buf);
+        bool state = doc["state"];
+
+        digitalWrite(RELAY_PIN, state ? HIGH : LOW);
+
+        // Send response
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+        return ESP_OK;
+    }
+);
+
+server->add_handler(put_handler);
+```
+
+### Two Approaches Compared
+
+| Aspect | SignalK PUT (Recommended) | Direct HTTP PUT |
+|--------|---------------------------|-----------------|
+| **Routing** | Server → WebSocket → Device | Client → Device |
+| **Discovery** | Automatic (mDNS) | Manual IP or mDNS |
+| **Authentication** | SignalK server manages | DIY implementation |
+| **Standardization** | Standard SignalK paths | Custom paths |
+| **Ecosystem Integration** | Full (works with all SignalK apps) | None |
+| **Latency** | Moderate (server forwarding) | Low (direct) |
+| **Setup Complexity** | Higher | Lower |
+| **Offline Operation** | Requires server running | Works standalone |
+| **Use Case** | Production marine systems | Debugging, backup control |
+
+### Best Practice: Hybrid Approach
+
+Implement **both** for maximum flexibility:
+
+```cpp
+// 1. SignalK integration for ecosystem compatibility
+auto sk_listener = std::make_shared<SKPutRequestListener>(
+    "electrical.switches.relay1.state",
+    [](JsonObject& request) {
+        control_relay(1, request["value"]);
+        return true;
+    }
+);
+
+// 2. Direct HTTP for debugging/standalone use
+auto http_handler = std::make_shared<HTTPRequestHandler>(
+    1 << HTTP_PUT,
+    "/api/relay/1",
+    [](httpd_req_t* req) {
+        // Parse body and control relay
+        control_relay(1, parsed_value);
+        httpd_resp_sendstr(req, "{\"ok\":true}");
+        return ESP_OK;
+    }
+);
+```
+
+### Device Discovery and Registration
+
+**mDNS Announcement:**
+
+When SensESP device boots, it announces services:
+- `_http._tcp` - HTTP configuration interface (usually port 80)
+- `_signalk-sensesp._tcp` - WebSocket client service
+
+**Server Connection:**
+1. Device discovers SignalK server via mDNS
+2. Establishes WebSocket connection
+3. Requests access (appears in SignalK server web UI for approval)
+4. Receives continuous delta stream
+5. PUT listener ready to process incoming requests
+
+### Common Use Cases
+
+**1. Light Control**
+```cpp
+auto light_listener = std::make_shared<SKPutRequestListener>(
+    "electrical.switches.navLight.state",
+    [](JsonObject& request) {
+        digitalWrite(NAV_LIGHT_PIN, request["value"] ? HIGH : LOW);
+        return true;
+    }
+);
+```
+
+**2. Motor Control**
+```cpp
+auto motor_listener = std::make_shared<SKPutRequestListener>(
+    "electrical.motors.windlass.command",
+    [](JsonObject& request) {
+        String command = request["value"];
+        if (command == "deploy") {
+            start_windlass_deploy();
+        } else if (command == "retrieve") {
+            start_windlass_retrieve();
+        } else if (command == "stop") {
+            stop_windlass();
+        }
+        return true;
+    }
+);
+```
+
+**3. Configuration Update**
+```cpp
+auto config_listener = std::make_shared<SKPutRequestListener>(
+    "sensors.temperature.calibration",
+    [](JsonObject& request) {
+        float offset = request["value"];
+        if (offset < -10.0 || offset > 10.0) {
+            return false;  // Reject out of range
+        }
+        temp_calibration_offset = offset;
+        save_config();
+        return true;
+    }
+);
+```
+
+### Testing PUT Handlers
+
+**Via SignalK Server:**
+```bash
+# PUT through SignalK server (standard approach)
+curl -X PUT http://localhost:80/signalk/v1/api/vessels/self/electrical/switches/relay1/state \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"value": 1}'
+```
+
+**Direct to ESP32:**
+```bash
+# PUT directly to ESP32 (for testing/debugging)
+curl -X PUT http://192.168.1.100/api/relay/1 \
+  -H "Content-Type: application/json" \
+  -d '{"state": 1}'
+```
+
+### Capabilities and Limitations
+
+**What SensESP Provides:**
+- Automatic WebSocket connection management
+- PUT request queuing and processing
+- Integration with SignalK data model
+- mDNS service discovery
+- Configuration web interface
+
+**What SensESP Does NOT Provide:**
+- Automatic PUT handler announcement (no standard mechanism in SignalK spec)
+- Path validation against schemas
+- Automatic UI generation for controls
+
+**Discovery Pattern:**
+PUT handlers are typically discovered through:
+- Documentation
+- Configuration in SignalK apps (e.g., SKipper, WilhelmSK)
+- Trial and error (send PUT, check response)
+
+### Useful Resources
+
+- **SensESP Documentation**: https://signalk.org/SensESP/
+- **GitHub Repository**: https://github.com/SignalK/SensESP
+- **PUT Request Implementation**: [signalk_put_request.cpp](https://signalk.org/SensESP/generated/docs/signalk__put__request_8cpp_source.html)
+- **SmartSwitchController Example**: [Class Reference](https://signalk.org/SensESP/generated/docs/classsensesp_1_1_smart_switch_controller.html)
+- **HTTP Server API**: [http_server.h](https://signalk.org/SensESP/generated/docs/http__server_8h_source.html)
+- **ESP-IDF HTTP Server**: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_http_server.html
+
+---
+
 ## Metadata
 
 Every path can have metadata:

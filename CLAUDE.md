@@ -2,6 +2,30 @@
 
 Automation bridge between windlass chain counter and anchor alarm plugin. JavaScript/Node.js SignalK plugin.
 
+**Plugin Repo:** dougkimmerly/signalk-anchorAlarmConnector
+**Orchestrator:** signalk55
+**Server:** 192.168.20.55
+
+---
+
+## Central Message Hub
+
+This repo uses the central hub in signalk55 for PM-CC coordination.
+
+| Location | Purpose |
+|----------|--------|
+| `signalk55/.claude/hub/task-queue.md` | Tasks tagged `[signalk-anchorAlarmConnector]` |
+| `signalk55/.claude/hub/response-queue.md` | Responses tagged `[signalk-anchorAlarmConnector]` |
+
+### CC Workflow
+```bash
+cd ~/dkSRC/signalk/signalk-anchorAlarmConnector
+claude
+/msg
+```
+
+---
+
 ## Quick Reference
 
 | Action | Command |
@@ -46,6 +70,7 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 
 | Command | When to use |
 |---------|-------------|
+| `/msg` | Get tasks from signalk55 hub |
 | `/implement` | Adding features, writing new code |
 | `/debug` | Diagnosing issues, analyzing logs |
 | `/review` | Code review, safety checks |
@@ -73,7 +98,7 @@ SignalK Server ←→ This Plugin ←→ Anchor Alarm Plugin
 
 ## Server Details
 
-- **URL**: `http://localhost:80`
+- **URL**: `http://192.168.20.55:3000`
 - **Auth**: JWT Bearer tokens (admin/signalk)
 - **Plugin ID**: `signalk-anchoralarmconnector`
 - **Test mode**: Toggle in SignalK Plugin Config UI

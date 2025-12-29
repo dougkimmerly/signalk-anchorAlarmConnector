@@ -474,6 +474,52 @@ See [docs/MCP_SERVER_MAINTENANCE.md](docs/MCP_SERVER_MAINTENANCE.md) for details
 - **Type-safe**: V8 isolate execution with SignalK SDK
 - **Real-time**: Direct connection to SignalK server
 
+## Deployment
+
+### Server Details
+
+- **URL**: `http://192.168.20.166:3000`
+- **SSH**: `doug@192.168.20.166`
+- **Plugin Path**: `/home/doug/src/signalk-anchorAlarmConnector`
+- **Symlink**: `~/.signalk/node_modules/signalk-anchoralarmconnector` → `../../src/signalk-anchorAlarmConnector`
+- **Auth**: JWT Bearer tokens (admin/signalk)
+- **Plugin ID**: `signalk-anchoralarmconnector`
+
+### Deploy Changes to Production
+
+```bash
+# 1. SSH to server
+ssh doug@192.168.20.166
+
+# 2. Navigate to plugin directory
+cd /home/doug/src/signalk-anchorAlarmConnector
+
+# 3. Check for local changes
+git status
+
+# 4. Stash local changes if needed
+git stash
+
+# 5. Pull latest changes
+git pull
+
+# 6. Restore local changes if needed
+git stash pop
+
+# 7. DO NOT restart SignalK manually
+# PM (orchestrator) manages service restarts
+```
+
+### Verify Deployment
+
+```bash
+# Check plugin is running
+sudo journalctl -u signalk --since "1 minute ago" | grep -i anchor
+
+# View SignalK logs
+sudo journalctl -u signalk -f
+```
+
 ## Links & Resources
 
 - [Anchor Alarm Plugin Repository](https://github.com/sbender9/signalk-anchoralarm-plugin)

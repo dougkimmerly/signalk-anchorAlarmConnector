@@ -1,0 +1,17 @@
+{
+  "entity_id": "CC-anchor",
+  "repo": "dougkimmerly/signalk-anchorAlarmConnector",
+  "domain_keywords": [
+    "signalk",
+    "anchor",
+    "alarm",
+    "plugin",
+    "marine",
+    "boat",
+    "navigation",
+    "safety",
+    "nodejs"
+  ],
+  "capabilities": "SignalK plugin for anchor alarm connectivity and marine safety monitoring",
+  "handoff_path": ".claude/handoff/"
+}

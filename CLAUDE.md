@@ -43,24 +43,24 @@ Read .claude/skills/msg/skill.md and execute it
 
 ## Server Information
 
-**SignalK Server:** 192.168.20.19:3000 (Docker/CasaOS)
+**SignalK Server:** 192.168.20.19:3000 (Docker Server)
 **Admin UI:** http://192.168.20.19:3000/admin/#/serverConfiguration/plugins/signalk-anchoralarmconnector
 
 ---
 
-## Deployment (Docker/CasaOS)
+## Deployment (Docker Server)
 
-SignalK runs in Docker on CasaOS. Plugin is cloned directly into the plugins directory.
+SignalK runs in Docker on the Docker Server. Plugin is cloned directly into the plugins directory.
 
 **Server paths:**
-- Plugin location: `/opt/homelab-casaos/signalk/plugins/signalk-anchorAlarmConnector`
-- Config/data: `/opt/homelab-casaos/signalk/data`
+- Plugin location: `/opt/docker-server/signalk/plugins/signalk-anchorAlarmConnector`
+- Config/data: `/opt/docker-server/signalk/data`
 
 ### Deploy Changes
 
 ```bash
 ssh doug@192.168.20.19
-cd /opt/homelab-casaos/signalk/plugins/signalk-anchorAlarmConnector
+cd /opt/docker-server/signalk/plugins/signalk-anchorAlarmConnector
 git pull
 docker restart signalk
 ```
@@ -69,7 +69,7 @@ docker restart signalk
 
 ```bash
 ssh doug@192.168.20.19
-cd /opt/homelab-casaos/signalk/plugins
+cd /opt/docker-server/signalk/plugins
 
 # Clone the repo
 git clone git@github.com:dougkimmerly/signalk-anchorAlarmConnector.git

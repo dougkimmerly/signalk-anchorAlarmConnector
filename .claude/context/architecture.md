@@ -13,7 +13,7 @@
           ▼
 ┌─────────────────────┐
 │   SignalK Server    │  Central data hub
-│   (Docker/CasaOS)   │  Port 3000, JWT auth
+│   (Docker Server)   │  Port 3000, JWT auth
 └─────────┬───────────┘
           │ Subscriptions
           ▼

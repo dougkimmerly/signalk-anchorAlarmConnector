@@ -13,7 +13,7 @@
           ▼
 ┌─────────────────────┐
 │   SignalK Server    │  Central data hub
-│   (Raspberry Pi)    │  Port 80, JWT auth
+│   (Docker/CasaOS)   │  Port 3000, JWT auth
 └─────────┬───────────┘
           │ Subscriptions
           ▼

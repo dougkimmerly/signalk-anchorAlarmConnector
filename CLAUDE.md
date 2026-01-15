@@ -41,4 +41,60 @@ Read .claude/skills/msg/skill.md and execute it
 
 ---
 
-(Rest of original content follows - architecture, data paths, deployment, etc. preserved)
+## Server Information
+
+**SignalK Server:** 192.168.20.19:3000 (Docker/CasaOS)
+**Admin UI:** http://192.168.20.19:3000/admin/#/serverConfiguration/plugins/signalk-anchoralarmconnector
+
+---
+
+## Deployment (Docker/CasaOS)
+
+SignalK runs in Docker on CasaOS. Plugin is cloned directly into the plugins directory.
+
+**Server paths:**
+- Plugin location: `/opt/homelab-casaos/signalk/plugins/signalk-anchorAlarmConnector`
+- Config/data: `/opt/homelab-casaos/signalk/data`
+
+### Deploy Changes
+
+```bash
+ssh doug@192.168.20.19
+cd /opt/homelab-casaos/signalk/plugins/signalk-anchorAlarmConnector
+git pull
+docker restart signalk
+```
+
+### Fresh Install (if plugin is missing)
+
+```bash
+ssh doug@192.168.20.19
+cd /opt/homelab-casaos/signalk/plugins
+
+# Clone the repo
+git clone git@github.com:dougkimmerly/signalk-anchorAlarmConnector.git
+
+# Install dependencies inside container
+docker exec signalk sh -c 'cd /home/node/.signalk/node_modules/signalk-anchorAlarmConnector && npm install --omit=dev'
+
+# Restart SignalK
+docker restart signalk
+```
+
+### View Logs
+
+```bash
+ssh doug@192.168.20.19 "docker logs signalk 2>&1 | grep -i anchor | tail -20"
+```
+
+---
+
+## Context Files
+
+Located in `.claude/context/` - load as needed:
+
+| File | Contains |
+|------|----------|
+| `architecture.md` | System design, state machines, data flow |
+| `domain.md` | Anchor alarm concepts, chain counter integration |
+| `patterns.md` | Code patterns, SignalK conventions |
